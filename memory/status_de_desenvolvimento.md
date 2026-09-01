@@ -228,3 +228,14 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - O Desktop passou a reconhecer o contrato de resgate do código por usuário autenticado. A interface e o fluxo de login ainda não foram conectados.
 - **Nada desta camada foi implantado no Supabase.** Antes do deploy ainda será necessário remover os endpoints legados e adaptar o onboarding.
 - Regressões locais após esta camada: **66 testes aprovados** e as três Edge Functions aprovadas no `deno check` com as dependências oficiais do Supabase.
+
+## Onboarding empresarial e trial automático v2 — 01/09/2026
+
+- Implementado localmente o primeiro acesso da versão 2.0: criação da conta por e-mail e senha, confirmação por código, validação de CNPJ e liberação automática do computador principal em trial de 2 dias.
+- A criação de empresa, matriz, proprietário, instalação principal, assinatura e licença de compatibilidade é atômica no servidor. O token bruto do computador é devolvido uma única vez; o banco mantém somente seu hash.
+- Criado controle de tentativas com hash do hardware e limite de cinco tentativas por usuário a cada hora. CNPJ e computador não podem reutilizar o trial.
+- A nova tela também contempla computador adicional por login e código descartável de vínculo, além da solicitação de recuperação de senha.
+- O fluxo novo não contém Firebase, código de migração nem solicitação de licença no cadastro inicial. Telas antigas de cadastro/migração e testes Firebase obsoletos foram removidos somente da pasta isolada da v2.
+- A janela de primeiro acesso é adaptável a notebooks com menor altura e mantém o formulário em área rolável.
+- Validação local: **67 testes automatizados aprovados**, compilação Python aprovada e `deno check` aprovado nas Edge Functions `account-api`, `desktop-api` e `admin-api`.
+- **Nada desta etapa foi implantado no Supabase.** Antes do teste integrado será necessário aplicar a migração 011, publicar as funções, habilitar deliberadamente novos cadastros e configurar o e-mail do Supabase para exibir o código de confirmação.

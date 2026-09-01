@@ -19,17 +19,6 @@ class SupabaseDesktopClientTests(unittest.TestCase):
         self.temp.cleanup()
 
     @patch("src.core.supabase_desktop._dpapi_transform", side_effect=lambda data, decrypt=False: data)
-    def test_claim_salva_token_sem_gravar_codigo(self, _transform):
-        token = "a" * 64
-        with patch.object(self.client, "_request", return_value={"installation_token": token}):
-            self.client.claim_legacy_installation("MIG-SEGREDO")
-        session = self.client.load_session()
-        self.assertEqual(session.token, token)
-        with open(self.client.session_path, "rb") as file:
-            stored = file.read().decode("utf-8")
-        self.assertNotIn("MIG-SEGREDO", stored)
-
-    @patch("src.core.supabase_desktop._dpapi_transform", side_effect=lambda data, decrypt=False: data)
     def test_sessao_de_outro_hardware_e_rejeitada(self, _transform):
         self.client._save_session("b" * 64)
         other = SupabaseDesktopClient.__new__(SupabaseDesktopClient)
@@ -38,28 +27,18 @@ class SupabaseDesktopClientTests(unittest.TestCase):
         other.session_path = self.client.session_path
         self.assertIsNone(other.load_session())
 
-    def test_resposta_sem_token_nao_cria_sessao(self):
-        with patch.object(self.client, "_request", return_value={"ok": True}):
-            with self.assertRaises(DesktopBackendError):
-                self.client.claim_legacy_installation("MIG-INVALIDO")
-        self.assertFalse(os.path.exists(self.client.session_path))
-
-    def test_bootstrap_distingue_computador_novo(self):
-        with patch.object(self.client, "_request", return_value={"mode": "new"}) as request:
-            self.assertEqual(self.client.bootstrap_mode(), "new")
-        request.assert_called_once_with("bootstrap_mode", require_session=False)
-
     @patch("src.core.supabase_desktop._dpapi_transform", side_effect=lambda data, decrypt=False: data)
-    def test_cadastro_novo_salva_token_e_dados_nao_ficam_na_sessao(self, _transform):
+    def test_vinculo_adicional_salva_somente_token_da_instalacao(self, _transform):
         token = "c" * 64
         with patch.object(self.client, "_request", return_value={"installation_token": token}):
-            self.client.register_new_installation(
-                "Loja Teste", "Responsável", "86999999999"
+            self.client.redeem_device_link_code(
+                "PC-CODIGO-SUPER-SEGURO", "u" * 80, "2.0.0"
             )
         self.assertEqual(self.client.load_session().token, token)
         with open(self.client.session_path, "rb") as file:
             stored = file.read().decode("utf-8")
-        self.assertNotIn("Loja Teste", stored)
+        self.assertNotIn("PC-CODIGO-SUPER-SEGURO", stored)
+        self.assertNotIn("u" * 80, stored)
 
     def test_pix_e_sempre_operado_pela_api_segura(self):
         with patch.object(self.client, "_request", return_value={"ok": True, "payment_id": "123"}) as request:

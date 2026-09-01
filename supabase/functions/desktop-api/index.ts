@@ -1,7 +1,6 @@
 import { jsonResponse, readJson, cleanText } from "../_shared/http.ts";
 import {
-  claimLegacyInstallation, installationBootstrapMode, randomToken,
-  requireInstallation, requireUser, serviceClient, sha256,
+  requireInstallation, requireUser, sha256,
 } from "../_shared/security.ts";
 
 Deno.serve(async (req) => {
@@ -11,70 +10,6 @@ Deno.serve(async (req) => {
     const body = await readJson(req);
     const action = cleanText(body.action, 80);
     const hardwareId = cleanText(body.hardware_id, 128);
-
-    if (action === "bootstrap_mode") {
-      return jsonResponse({ ok: true, ...await installationBootstrapMode(hardwareId) });
-    }
-
-    if (action === "register_new_installation") {
-      const mode = await installationBootstrapMode(hardwareId);
-      if (mode.mode !== "new") return jsonResponse({ error: "INSTALLATION_ALREADY_EXISTS" }, 409);
-      const companyName = cleanText(body.company_name, 160);
-      const managerName = cleanText(body.manager_name, 160);
-      const phone = cleanText(body.phone, 40).replace(/\D/g, "");
-      if (companyName.length < 2 || managerName.length < 2 || phone.length < 10) {
-        return jsonResponse({ error: "INVALID_REGISTRATION" }, 400);
-      }
-      const client = serviceClient();
-      const token = randomToken();
-      let companyId = "";
-      let installationId = "";
-      try {
-        const { data: company, error: companyError } = await client.from("companies").insert({
-          name: companyName, manager_name: managerName, phone, active: true,
-        }).select("id").single();
-        if (companyError) throw companyError;
-        companyId = company.id;
-        const { data: installation, error: installationError } = await client.from("installations").insert({
-          company_id: companyId, hardware_id: hardwareId, token_hash: await sha256(token),
-          token_issued_at: new Date().toISOString(), status: "active",
-        }).select("id").single();
-        if (installationError) throw installationError;
-        installationId = installation.id;
-        // Mantém a regra histórica: dois dias de teste, encerrando às 22h
-        // no fuso de Fortaleza (UTC-3) no segundo dia após o cadastro.
-        const localNow = new Date(Date.now() - 3 * 60 * 60 * 1000);
-        const trialExpiry = new Date(Date.UTC(
-          localNow.getUTCFullYear(), localNow.getUTCMonth(), localNow.getUTCDate() + 3, 1, 0, 0,
-        ));
-        const { error: licenseError } = await client.from("licenses").insert({
-          installation_id: installationId, status: "trial", license_type: "trial",
-          expires_at: trialExpiry.toISOString(),
-        });
-        if (licenseError) throw licenseError;
-        await client.from("audit_events").insert({
-          actor_installation_id: installationId, action: "installation.trial_registered",
-          target_type: "installation", target_id: installationId, metadata: {},
-        });
-        return jsonResponse({
-          ok: true, installation_token: token, trial_expires_at: trialExpiry.toISOString(),
-        }, 201);
-      } catch (error) {
-        if (installationId) await client.from("installations").delete().eq("id", installationId);
-        if (companyId) await client.from("companies").delete().eq("id", companyId);
-        throw error;
-      }
-    }
-
-    if (action === "claim_legacy_installation") {
-      const claimCode = cleanText(body.claim_code, 160).toUpperCase();
-      const { installation, installationToken } = await claimLegacyInstallation(hardwareId, claimCode);
-      return jsonResponse({
-        ok: true,
-        hardware_id: installation.hardware_id,
-        installation_token: installationToken,
-      });
-    }
 
     if (action === "redeem_device_link_code") {
       const code = cleanText(body.link_code, 160).toUpperCase();
@@ -91,6 +26,16 @@ Deno.serve(async (req) => {
     }
 
     const { client, installation } = await requireInstallation(req, hardwareId);
+
+    if (action === "heartbeat") {
+      const { error } = await client.from("installations").update({
+        online: Boolean(body.online),
+        last_seen_at: new Date().toISOString(),
+        app_version: cleanText(body.app_version, 40) || null,
+      }).eq("id", installation.id);
+      if (error) throw error;
+      return jsonResponse({ ok: true });
+    }
 
     if (action === "license_status") {
       const { data: license, error } = await client.from("licenses")
@@ -248,8 +193,6 @@ Deno.serve(async (req) => {
   } catch (error) {
     const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
     const status = code === "UNAUTHORIZED" ? 401
-      : code === "INVALID_CLAIM" ? 401
-      : code === "CLAIM_EXPIRED" ? 410
       : code === "INSTALLATION_ALREADY_EXISTS" ? 409
       : 500;
     return jsonResponse({ error: status === 500 ? "INTERNAL_ERROR" : code }, status);

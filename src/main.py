@@ -68,36 +68,12 @@ def main():
     # 1.5 Checagem de Cadastro Inicial (Virgem) ou Incompleto
     from src.core.license_manager import LicenseManager
     lm = LicenseManager()
-    # Sem vínculo local, o servidor distingue instalação legada de computador novo.
-    # Apenas máquinas importadas do Firebase recebem a tela de Código de Migração.
-    if lm.precisa_migrar_para_supabase():
-        while True:
-            try:
-                bootstrap_mode = lm.modo_vinculo_inicial()
-                break
-            except Exception:
-                resposta = QMessageBox.warning(
-                    None, "Falha de conexão",
-                    "Não foi possível identificar este computador no servidor seguro.\n\n"
-                    "Verifique sua internet e tente novamente.",
-                    QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Close,
-                    QMessageBox.StandardButton.Retry,
-                )
-                if resposta != QMessageBox.StandardButton.Retry:
-                    sys.exit(0)
-        if bootstrap_mode == "legacy":
-            from src.ui.screens.migration_screen import MigrationScreen
-            initial_dialog = MigrationScreen()
-        elif bootstrap_mode == "new":
-            from src.ui.screens.new_installation_screen import NewInstallationScreen
-            initial_dialog = NewInstallationScreen()
-        else:
-            QMessageBox.critical(
-                None, "Vínculo local ausente",
-                "Este computador já está cadastrado, mas o vínculo seguro local não foi encontrado.\n\n"
-                "Entre em contato com o suporte para recuperar o acesso.",
-            )
-            sys.exit(0)
+    # Na versão 2.0, computadores sem vínculo iniciam o cadastro empresarial
+    # ou usam um código descartável para entrar como computador adicional.
+    # Fluxos de migração Firebase não fazem parte deste projeto isolado.
+    if lm.precisa_configurar_primeiro_acesso():
+        from src.ui.screens.new_installation_screen import NewInstallationScreen
+        initial_dialog = NewInstallationScreen()
         if initial_dialog.exec() != QDialog.DialogCode.Accepted:
             sys.exit(0)
     while True:
@@ -117,7 +93,7 @@ def main():
         if resposta != QMessageBox.StandardButton.Retry:
             sys.exit(0)
     status_lic = licenca_info.get("status")
-    if status_lic in {"migracao_necessaria", "vinculo_invalido"}:
+    if status_lic in {"primeiro_acesso_necessario", "vinculo_invalido"}:
         QMessageBox.critical(
             None, "Vínculo não autorizado",
             "Este computador ainda não possui um vínculo válido com a concessionária.\n\n"
@@ -134,22 +110,6 @@ def main():
                 "O sistema está temporariamente em manutenção. Tente novamente mais tarde."),
         )
         sys.exit(0)
-    
-    precisa_registrar = False
-    is_update = False
-    
-    if not lm.usa_supabase and status_lic == "nao_registrado":
-        precisa_registrar = True
-    elif not lm.usa_supabase and (not licenca_info.get("concessionaria") or not licenca_info.get("gestor") or not licenca_info.get("telefone")):
-        precisa_registrar = True
-        is_update = True
-        
-    if precisa_registrar:
-        from src.ui.screens.registration_screen import RegistrationScreen
-        from PyQt6.QtWidgets import QDialog
-        reg_dialog = RegistrationScreen(is_update=is_update)
-        if reg_dialog.exec() != QDialog.DialogCode.Accepted:
-            sys.exit(0)
     
     # 2. Tela de Trava de Licença (Trial/Assinatura)
     from src.ui.screens.license_screen import LicenseScreen

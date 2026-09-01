@@ -4,7 +4,7 @@ import { randomToken, requireAdmin, sha256 } from "../_shared/security.ts";
 const MUTATIONS = new Set([
   "create_company", "create_installation", "create_key", "revoke_key",
   "update_license", "set_installation_status", "update_system_config",
-  "import_legacy_snapshot", "issue_migration_claim", "delete_installation",
+  "delete_installation",
 ]);
 
 Deno.serve(async (req) => {
@@ -60,40 +60,6 @@ Deno.serve(async (req) => {
       const { data, error } = await query;
       if (error) throw error;
       return jsonResponse({ ok: true, events: data });
-    }
-
-    if (action === "issue_migration_claim") {
-      const hardwareId = cleanText(body.hardware_id, 128);
-      const { data: installation, error: lookupError } = await client.from("installations")
-        .select("id, hardware_id, status, migration_claimed_at, companies(name)")
-        .eq("hardware_id", hardwareId).maybeSingle();
-      if (lookupError) throw lookupError;
-      if (!installation) return jsonResponse({ error: "INSTALLATION_NOT_FOUND" }, 404);
-      if (installation.migration_claimed_at || installation.status === "active") {
-        return jsonResponse({ error: "ALREADY_MIGRATED" }, 409);
-      }
-      const claimCode = `MIG-${randomToken(24).toUpperCase()}`;
-      const usableUntil = new Date(Date.now() + 30 * 86400000).toISOString();
-      const { error: updateError } = await client.from("installations").update({
-        migration_claim_hash: await sha256(claimCode),
-        migration_claim_until: usableUntil,
-        migration_claimed_at: null,
-        status: "pending",
-      }).eq("id", installation.id);
-      if (updateError) throw updateError;
-      const relatedCompany = Array.isArray(installation.companies)
-        ? installation.companies[0]
-        : installation.companies;
-      await audit(client, user.id, "installation.migration_claim_issued", "installation", installation.id, {
-        usable_until: usableUntil,
-      });
-      return jsonResponse({
-        ok: true,
-        hardware_id: installation.hardware_id,
-        company_name: relatedCompany?.name || "",
-        claim_code: claimCode,
-        usable_until: usableUntil,
-      });
     }
 
     if (action === "update_license") {
@@ -329,121 +295,6 @@ Deno.serve(async (req) => {
       if (error) throw error;
       await audit(client, user.id, "license_key.created", "license_key", data.id, { key_type: keyType });
       return jsonResponse({ ok: true, key: data, code }, 201);
-    }
-
-    if (action === "import_legacy_snapshot") {
-      if (admin.role !== "owner") return jsonResponse({ error: "OWNER_REQUIRED" }, 403);
-      const records = Array.isArray(body.licenses) ? body.licenses.slice(0, 100) : [];
-      if (!records.length) return jsonResponse({ error: "EMPTY_IMPORT" }, 400);
-      const claims: Array<Record<string, unknown>> = [];
-      for (const raw of records as Array<Record<string, unknown>>) {
-        const hardwareId = cleanText(raw.hardware_id, 128);
-        const companyName = cleanText(raw.company_name, 160);
-        const expiresAt = cleanText(raw.expires_at, 64);
-        if (hardwareId.length < 8 || companyName.length < 2 || Number.isNaN(Date.parse(expiresAt))) {
-          return jsonResponse({ error: "INVALID_LEGACY_RECORD" }, 400);
-        }
-        let { data: installation } = await client.from("installations")
-          .select("id, company_id, migration_claim_hash, migration_claimed_at")
-          .eq("hardware_id", hardwareId).maybeSingle();
-        let companyId = installation?.company_id;
-        if (!installation) {
-          const { data: company, error: companyError } = await client.from("companies").insert({
-            name: companyName,
-            manager_name: cleanText(raw.manager_name, 160) || null,
-            phone: cleanText(raw.phone, 40) || null,
-            active: true,
-          }).select("id").single();
-          if (companyError) throw companyError;
-          companyId = company.id;
-          const { data: created, error: installationError } = await client.from("installations").insert({
-            company_id: companyId,
-            hardware_id: hardwareId,
-            status: "pending",
-            app_version: cleanText(raw.app_version, 40) || null,
-            online: Boolean(raw.online),
-            last_seen_at: cleanText(raw.last_seen_at, 64) || null,
-            legacy_imported_at: new Date().toISOString(),
-          }).select("id, company_id, migration_claim_hash, migration_claimed_at").single();
-          if (installationError) throw installationError;
-          installation = created;
-        } else {
-          await client.from("companies").update({
-            name: companyName,
-            manager_name: cleanText(raw.manager_name, 160) || null,
-            phone: cleanText(raw.phone, 40) || null,
-          }).eq("id", companyId);
-          await client.from("installations").update({
-            app_version: cleanText(raw.app_version, 40) || null,
-            online: Boolean(raw.online),
-            last_seen_at: cleanText(raw.last_seen_at, 64) || null,
-            legacy_imported_at: new Date().toISOString(),
-          }).eq("id", installation.id);
-        }
-        const licenseRow = {
-          installation_id: installation.id,
-          status: cleanText(raw.status, 20) === "trial" ? "trial" : "active",
-          license_type: cleanText(raw.status, 20) === "trial" ? "trial" : "subscription",
-          expires_at: expiresAt,
-          extra_messages: Math.max(0, Math.trunc(Number(raw.extra_messages) || 0)),
-          monthly_price: raw.monthly_price == null ? null : Math.max(0, Number(raw.monthly_price)),
-          report_links: typeof raw.report_links === "object" && raw.report_links ? raw.report_links : {},
-          adjustment_notice: cleanText(raw.adjustment_notice, 2000) || null,
-        };
-        const { error: licenseError } = await client.from("licenses")
-          .upsert(licenseRow, { onConflict: "installation_id" });
-        if (licenseError) throw licenseError;
-
-        if (!installation.migration_claimed_at) {
-          const claimCode = `MIG-${randomToken(24).toUpperCase()}`;
-          await client.from("installations").update({
-            migration_claim_hash: await sha256(claimCode),
-            migration_claim_until: new Date(Date.now() + 30 * 86400000).toISOString(),
-            status: "pending",
-          }).eq("id", installation.id);
-          claims.push({ hardware_id: hardwareId, company_name: companyName, claim_code: claimCode });
-        }
-      }
-
-      const key = body.available_key as Record<string, unknown> | null;
-      if (key && cleanText(key.code, 160)) {
-        const code = cleanText(key.code, 160).toUpperCase();
-        const keyType = cleanText(key.key_type, 30);
-        const keyRow: Record<string, unknown> = {
-          code_hash: await sha256(code),
-          code_prefix: cleanText(key.code_prefix, 24),
-          key_type: keyType,
-          status: "new",
-          intended_company: cleanText(key.intended_company, 160) || null,
-          usable_until: cleanText(key.usable_until, 64),
-          created_by: user.id,
-        };
-        if (keyType === "days") keyRow.days_to_add = Number(key.days_to_add);
-        if (keyType === "messages") keyRow.messages_to_add = Number(key.messages_to_add);
-        if (keyType === "fixed_expiry") keyRow.fixed_expiry = cleanText(key.fixed_expiry, 64);
-        const { error: keyError } = await client.from("license_keys")
-          .upsert(keyRow, { onConflict: "code_hash", ignoreDuplicates: true });
-        if (keyError) throw keyError;
-      }
-
-      const system = body.system as Record<string, unknown> | null;
-      if (system) {
-        const { error: systemError } = await client.from("system_config").update({
-          current_version: cleanText(system.current_version, 40) || "0.0.0",
-          minimum_version: cleanText(system.minimum_version, 40) || "0.0.0",
-          update_required: Boolean(system.update_required),
-          installer_url: cleanText(system.installer_url, 2000) || null,
-          default_monthly_price: Math.max(0, Number(system.default_monthly_price) || 250),
-          updated_by: user.id,
-        }).eq("singleton", true);
-        if (systemError) throw systemError;
-      }
-      await audit(client, user.id, "legacy_snapshot.imported", "migration", "firebase", {
-        license_count: records.length,
-        claim_count: claims.length,
-        available_key_imported: Boolean(key),
-      });
-      return jsonResponse({ ok: true, imported: records.length, claims }, 201);
     }
 
     return jsonResponse({ error: "UNKNOWN_ACTION" }, 400);

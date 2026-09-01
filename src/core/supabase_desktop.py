@@ -107,8 +107,15 @@ class SupabaseDesktopClient:
             os.fsync(file.fileno())
         os.replace(temporary, self.session_path)
 
+    def save_installation_token(self, token: str) -> None:
+        """Persiste somente um token emitido pelo servidor após vínculo confirmado."""
+        normalized = str(token or "").strip()
+        if len(normalized) < 40:
+            raise DesktopBackendError("INVALID_SERVER_RESPONSE")
+        self._save_session(normalized)
+
     def _request(self, action: str, payload: Optional[Dict[str, Any]] = None,
-                 require_session: bool = True) -> Dict[str, Any]:
+                 require_session: bool = True, user_access_token: str = "") -> Dict[str, Any]:
         if not SUPABASE_PUBLISHABLE_KEY:
             raise DesktopBackendError("SERVER_CONFIGURATION_ERROR")
         body = {"action": action, "hardware_id": self.hardware_id, **(payload or {})}
@@ -121,8 +128,10 @@ class SupabaseDesktopClient:
         if require_session:
             session = self.load_session()
             if not session:
-                raise DesktopBackendError("MIGRATION_REQUIRED", 401)
+                raise DesktopBackendError("INSTALLATION_SESSION_REQUIRED", 401)
             headers["x-installation-token"] = session.token
+        if user_access_token:
+            headers["Authorization"] = f"Bearer {user_access_token}"
         request = urllib.request.Request(
             f"{SUPABASE_URL}{DESKTOP_API_PATH}", method="POST",
             data=json.dumps(body, ensure_ascii=False).encode("utf-8"), headers=headers,
@@ -141,44 +150,27 @@ class SupabaseDesktopClient:
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise DesktopBackendError("NETWORK_ERROR") from error
 
-    def claim_legacy_installation(self, claim_code: str) -> Dict[str, Any]:
+    def redeem_device_link_code(self, link_code: str, user_access_token: str,
+                                app_version: str = "") -> Dict[str, Any]:
         result = self._request(
-            "claim_legacy_installation",
-            {"claim_code": str(claim_code).strip().upper()},
-            require_session=False,
-        )
-        token = str(result.get("installation_token") or "")
-        if len(token) < 40:
-            raise DesktopBackendError("INVALID_SERVER_RESPONSE")
-        self._save_session(token)
-        return result
-
-    def bootstrap_mode(self) -> str:
-        result = self._request("bootstrap_mode", require_session=False)
-        mode = str(result.get("mode") or "")
-        if mode not in {"new", "legacy", "recovery_required"}:
-            raise DesktopBackendError("INVALID_SERVER_RESPONSE")
-        return mode
-
-    def register_new_installation(self, company_name: str,
-                                  manager_name: str, phone: str) -> Dict[str, Any]:
-        result = self._request(
-            "register_new_installation",
+            "redeem_device_link_code",
             {
-                "company_name": str(company_name).strip(),
-                "manager_name": str(manager_name).strip(),
-                "phone": "".join(filter(str.isdigit, str(phone))),
+                "link_code": str(link_code).strip().upper(),
+                "app_version": str(app_version).strip(),
             },
             require_session=False,
+            user_access_token=str(user_access_token).strip(),
         )
-        token = str(result.get("installation_token") or "")
-        if len(token) < 40:
-            raise DesktopBackendError("INVALID_SERVER_RESPONSE")
-        self._save_session(token)
+        self.save_installation_token(result.get("installation_token"))
         return result
 
     def license_status(self, app_version: str = "") -> Dict[str, Any]:
         return self._request("license_status", {"app_version": app_version})
+
+    def heartbeat(self, online: bool, app_version: str = "") -> Dict[str, Any]:
+        return self._request(
+            "heartbeat", {"online": bool(online), "app_version": str(app_version).strip()}
+        )
 
     def redeem_key(self, code: str) -> Dict[str, Any]:
         return self._request("redeem_key", {"code": str(code).strip().upper()})
@@ -202,17 +194,14 @@ class SupabaseDesktopClient:
 def friendly_desktop_error(error: Exception) -> str:
     code = error.code if isinstance(error, DesktopBackendError) else "INTERNAL_ERROR"
     messages = {
-        "INVALID_CLAIM": "O Código de Migração não corresponde a este computador ou já foi utilizado.",
-        "CLAIM_EXPIRED": "Este Código de Migração expirou. Solicite um novo código ao suporte.",
         "NETWORK_ERROR": "Não foi possível conectar ao servidor. Verifique a internet e tente novamente.",
         "SECURE_STORAGE_UNAVAILABLE": "O armazenamento seguro do Windows não está disponível.",
         "SECURE_STORAGE_ERROR": "O Windows não conseguiu proteger o vínculo deste computador.",
         "UNAUTHORIZED": "O vínculo deste computador não é mais válido. Entre em contato com o suporte.",
-        "INVALID_REGISTRATION": "Confira o nome da concessionária, responsável e telefone.",
         "INVALID_KEY": "A chave informada não existe ou já foi utilizada.",
         "KEY_EXPIRED": "Esta chave expirou antes de ser utilizada. Solicite uma nova chave.",
         "KEY_NOT_VALID_FOR_INSTALLATION": "Uma chave de mensagens extras não ativa um computador novo.",
         "KEY_COMPANY_MISMATCH": "A chave foi emitida para outra concessionária.",
         "INSTALLATION_ALREADY_EXISTS": "Este computador já possui cadastro. Entre em contato com o suporte.",
     }
-    return messages.get(code, "Não foi possível concluir a migração deste computador.")
+    return messages.get(code, "Não foi possível concluir esta operação com o servidor.")

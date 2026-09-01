@@ -22,7 +22,6 @@ class FakeBackend:
 def manager_with(backend):
     manager = LicenseManager.__new__(LicenseManager)
     manager.chassi = "HARDWARE-123456"
-    manager.usa_supabase = True
     manager.secure_backend = backend
     manager._last_license_data = {}
     manager._last_system_config = {}

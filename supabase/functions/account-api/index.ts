@@ -26,6 +26,59 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true, memberships: data || [] });
     }
 
+    if (action === "create_company_trial") {
+      const companyName = cleanText(body.company_name, 160);
+      const ownerName = cleanText(body.owner_name, 160);
+      const phone = cleanText(body.phone, 40).replace(/\D/g, "");
+      const cnpj = normalizeCnpj(body.cnpj);
+      const hardwareId = cleanText(body.hardware_id, 128);
+      const appVersion = cleanText(body.app_version, 40);
+      if (!user.email_confirmed_at) {
+        return jsonResponse({ error: "EMAIL_CONFIRMATION_REQUIRED" }, 403);
+      }
+      if (companyName.length < 2 || ownerName.length < 2 || phone.length < 10 ||
+          phone.length > 15 || !validCnpj(cnpj) || hardwareId.length < 8) {
+        return jsonResponse({ error: "INVALID_ONBOARDING" }, 400);
+      }
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { count: recentAttempts, error: rateError } = await client
+        .from("onboarding_attempts")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .gte("attempted_at", oneHourAgo);
+      if (rateError) throw rateError;
+      if ((recentAttempts || 0) >= 5) {
+        return jsonResponse({ error: "ONBOARDING_RATE_LIMITED" }, 429);
+      }
+      const { data: attempt, error: attemptError } = await client
+        .from("onboarding_attempts")
+        .insert({ user_id: user.id, hardware_hash: await sha256(hardwareId) })
+        .select("id").single();
+      if (attemptError) throw attemptError;
+      const { data, error } = await client.rpc("create_company_trial_server", {
+        p_user_id: user.id,
+        p_company_name: companyName,
+        p_owner_name: ownerName,
+        p_phone: phone,
+        p_cnpj: cnpj,
+        p_hardware_id: hardwareId,
+        p_app_version: appVersion || null,
+      });
+      if (error) throw error;
+      if (data?.ok) {
+        await client.from("onboarding_attempts").update({ succeeded: true })
+          .eq("id", attempt.id);
+      }
+      if (!data?.ok) {
+        const conflict = [
+          "USER_ALREADY_HAS_COMPANY", "CNPJ_ALREADY_REGISTERED",
+          "INSTALLATION_ALREADY_EXISTS", "ONBOARDING_ALREADY_USED",
+        ].includes(data?.error);
+        return jsonResponse(data, conflict ? 409 : 400);
+      }
+      return jsonResponse(data, 201);
+    }
+
     const member = await requireCompanyMember(client, user.id, companyId, {
       mutation: MUTATIONS.has(action), aal: payload.aal,
     });
