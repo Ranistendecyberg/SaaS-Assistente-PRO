@@ -1,0 +1,66 @@
+TERMOS DE USO, LICENCIAMENTO DE SOFTWARE E ISENÇÃO DE RESPONSABILIDADE
+SaaS Assistente PRO
+
+Ao instalar, copiar, acessar ou utilizar este software, a pessoa física ou jurídica identificada como USUÁRIO/CONCESSIONÁRIA declara expressamente ter lido, compreendido e concordado com todas as cláusulas e condições deste Contrato.
+
+--------------------------------------------------------------------------------
+CLÁUSULA 1ª – DO OBJETO E NATUREZA DO SOFTWARE
+--------------------------------------------------------------------------------
+1.1. O presente instrumento regula a concessão de licença de uso temporária, não exclusiva, intransferível e revogável do software SaaS Assistente PRO ("SOFTWARE"), desenvolvido como ferramenta de apoio à produtividade, organização de indicadores de qualidade e facilitação na comunicação operacional do USUÁRIO.
+1.2. O USUÁRIO reconhece que a contratação refere-se estritamente à licença de uso temporário (modelo SaaS/Assinatura) e não à aquisição ou transferência de propriedade intelectual ou código-fonte.
+
+--------------------------------------------------------------------------------
+CLÁUSULA 2ª – DA CUSTÓDIA DOS DADOS EXTRAÍDOS E DA LGPD
+--------------------------------------------------------------------------------
+2.1. O SOFTWARE realiza o processamento e a organização de informações acessadas mediante as credenciais fornecidas pelo próprio USUÁRIO em portais corporativos (incluindo, mas não se limitando ao portal MyHonda).
+2.2. Posse e Custódia dos Dados: Todos os dados, relatórios e contatos extraídos ou gerados pertencem única e exclusivamente à CONCESSIONÁRIA/USUÁRIO, ficando armazenados localmente na estação de trabalho do cliente.
+2.3. LGPD (Lei nº 13.709/2018): A CONCESSIONÁRIA atua como a única e exclusiva Controladora dos Dados perante a legislação de proteção de dados, sendo sua a responsabilidade legal pela origem, consentimento, legítimo interesse e finalidade no tratamento das informações e contatos de seus clientes finais.
+2.4. A LICENCIANTE não comercializa, não repassa e não faz custódia em servidores externos dos dados pessoais dos clientes finais do USUÁRIO.
+
+--------------------------------------------------------------------------------
+CLÁUSULA 3ª – DA CONDUTA ÉTICA E ISENÇÃO TOTAL SOBRE MANIPULAÇÃO DE PESQUISAS DE SATISFAÇÃO
+--------------------------------------------------------------------------------
+3.1. Finalidade Legítima: O SOFTWARE destina-se exclusivamente ao gerenciamento de indicadores internos de qualidade e à facilitação do envio de convites legítimos de pesquisa de satisfação (NPS/CSAT) aos respectivos clientes que realizaram serviços ou compras na Concessionária.
+3.2. Vedação à Fraude e Má-Fé: É expressamente proibido ao USUÁRIO, seus colaboradores, sócios ou prepostos:
+     a) Utilizar os dados extraídos para responder, preencher ou fraudar questionários de pesquisa em nome de terceiros/clientes;
+     b) Clicar indevidamente em links individuais de pesquisa com o objetivo de manipular notas, índices (ex: Top2Box, NPS) ou rankings;
+     c) Realizar qualquer conduta que viole os regulamentos, manuais de conduta ou normas de qualidade da montadora/fabricante.
+3.3. Isenção Plena da Licenciante: A LICENCIANTE isenta-se total, definitiva e irrevogavelmente de qualquer responsabilidade civil, administrativa, trabalhista ou penal por sanções, penalidades, auditorias, perda de bonificações comerciais, cancelamento de credenciamento ou multas aplicadas pela montadora (Honda ou qualquer outra) em face da Concessionária decorrentes da má-fé, imperícia, negligência ou fraude praticada pelo USUÁRIO ou seus prepostos na manipulação das pesquisas.
+
+--------------------------------------------------------------------------------
+CLÁUSULA 4ª – DE SERVIÇOS E PLATAFORMAS DE TERCEIROS (WHATSAPP E PORTAIS)
+--------------------------------------------------------------------------------
+4.1. O USUÁRIO declara estar ciente de que o SOFTWARE integra-se operacionalmente com plataformas de terceiros (como WhatsApp/Meta Platforms Inc. e navegadores web).
+4.2. O uso do WhatsApp é regido exclusivamente pelas Políticas Comerciais e de Uso da Meta. A LICENCIANTE não se responsabiliza por eventuais bloqueios, suspensões temporárias ou banimentos de números telefônicos decorrentes de denúncias de spam ou envios em desacordo com as diretrizes da Meta.
+4.3. Alterações estruturais, manutenções, bloqueios de segurança ou mudanças de layout promovidas por portais corporativos de terceiros (ex: MyHonda) não configuram defeito do SOFTWARE, estando sujeitas a janelas técnicas de adequação pela LICENCIANTE.
+
+--------------------------------------------------------------------------------
+CLÁUSULA 5ª – DOS VALORES, REAJUSTES E PLANOS PERSONALIZADOS
+--------------------------------------------------------------------------------
+5.1. A continuidade do acesso ao SOFTWARE é condicionada ao adimplemento tempestivo da assinatura mensal conforme o plano e valor acordados entre as partes.
+5.2. Flexibilidade e Individualização de Valores: A LICENCIANTE reserva-se o direito de estipular valores de licença específicos, condições comerciais personalizadas por concessionária ou promoções por tempo determinado.
+5.3. Reajustes: Os valores das mensalidades poderão sofrer reajustes periódicos para manutenção do equilíbrio econômico-financeiro e melhorias de infraestrutura, sendo o USUÁRIO previamente informado por meio do próprio sistema ou canal de contato cadastrado antes da vigência do novo valor.
+5.4. A falta de pagamento no vencimento acarretará o bloqueio temporário e automático dos recursos do SOFTWARE até a devida regularização.
+
+--------------------------------------------------------------------------------
+CLÁUSULA 6ª – DE ARMAZENAMENTO LOCAL E BACKUPS
+--------------------------------------------------------------------------------
+6.1. O banco de dados e os registros de mensagens ficam alocados no disco local do equipamento do USUÁRIO.
+6.2. É de responsabilidade estrita e exclusiva do USUÁRIO a realização rotineira de cópias de segurança (backups), bem como a manutenção de antivírus e segurança física/lógica de seus computadores contra perdas por formatação, falha de hardware ou ataques cibernéticos.
+
+--------------------------------------------------------------------------------
+CLÁUSULA 7ª – LIMITAÇÃO DE RESPONSABILIDADE (FORNECIMENTO "AS-IS")
+--------------------------------------------------------------------------------
+7.1. O SOFTWARE é fornecido "no estado em que se encontra" (as-is). A LICENCIANTE em nenhuma hipótese responderá perante o USUÁRIO por lucros cessantes, perdas financeiras, interrupção de atividades comerciais ou danos indiretos decorrentes da indisponibilidade temporária do sistema.
+
+--------------------------------------------------------------------------------
+CLÁUSULA 8ª – PROPRIEDADE INTELECTUAL E VEDAÇÃO À ENGENHARIA REVERSA
+--------------------------------------------------------------------------------
+8.1. Todos os direitos de propriedade intelectual, marcas, marcas d'água, algoritmos e código-fonte do SOFTWARE pertencem unicamente à LICENCIANTE.
+8.2. É estritamente vedado ao USUÁRIO realizar descompilação, engenharia reversa, cópia, sublicenciamento, distribuição ou venda não autorizada do SOFTWARE, sob pena de rescisão imediata e responsabilização judicial.
+
+--------------------------------------------------------------------------------
+CLÁUSULA 9ª – DA RESCISÃO E FORO DE ELEIÇÃO
+--------------------------------------------------------------------------------
+9.1. O descumprimento de qualquer das cláusulas deste Termo ensejará o cancelamento imediato da licença de uso, sem prejuízo das medidas cabíveis.
+9.2. Para dirimir quaisquer litígios oriundos deste Contrato, as partes elegem o Foro da Comarca da sede da LICENCIANTE, com renúncia expressa a qualquer outro, por mais privilegiado que seja.

@@ -1,0 +1,37 @@
+# Dados e sessões locais
+/app_data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.dat
+*.log
+
+# Credenciais e configurações privadas
+.env
+.env.*
+!.env.example
+seguranca_gerador.json
+supabase/.temp/
+
+# Python e ferramentas
+__pycache__/
+*.py[cod]
+/.venv/
+/venv/
+/.pyarmor/
+/.build_tools/
+
+# Artefatos de compilação e distribuição
+/build/
+/build_*/
+/dist/
+/dist_*/
+*.patch
+*.spec.bak
+
+# Temporários do sistema e editor
+Thumbs.db
+.DS_Store
+*.tmp
+~$*
