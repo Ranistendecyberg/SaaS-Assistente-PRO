@@ -195,6 +195,18 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - O novo workspace possui repositório Git próprio no branch `main`. Não foram copiados `app_data`, bancos locais, `dist`, builds, caches ou o `venv` antigo.
 - A pasta `C:\SaaS - Codex\Saas` passa a ser referência congelada da 1.9.6. Toda nova alteração funcional da 2.0 deve ocorrer somente na pasta `SaaS-Desktop-v2`.
 
+## Supabase v2 e autenticação administrativa — 01/09/2026
+
+- Projeto isolado criado no Supabase: `saas-assistente-desktop-v2-prod`; a versão 1.9.6 e seu projeto permanecem sem alterações.
+- Fundação do banco v2 aplicada com preço padrão de R$ 300,00 e modo manutenção desativado.
+- Cadastro público, login anônimo e vínculo manual foram desativados. O provedor de e-mail e TOTP permanecem habilitados.
+- Primeiro usuário administrativo criado, vinculado como `owner` ativo e protegido por MFA TOTP.
+- Verificação direta em `auth.mfa_factors` confirmou o fator `Gerador Admin - Computador Principal` com status `verified`.
+- O modo auxiliar `--enroll-only` do Gerador foi corrigido para exibir uma confirmação persistente de sucesso e aguardar o clique em **Concluir**, sem tentar acessar funções administrativas ainda não implantadas.
+- Validação local: sintaxe aprovada e **68 testes automatizados aprovados**.
+- Commit da correção: `1da8164 fix: confirmar ativacao MFA antes de fechar` no repositório isolado da v2.
+- Nenhuma Edge Function nova da v2 foi implantada e nenhum instalador foi distribuído nesta etapa.
+
 ## Supabase exclusivo da versão 2.0 — 01/09/2026
 
 - Projeto criado: `saas-assistente-desktop-v2-prod`, referência pública `hnwvtoiiuqagzmuqygkw`, região São Paulo, estado Healthy.
