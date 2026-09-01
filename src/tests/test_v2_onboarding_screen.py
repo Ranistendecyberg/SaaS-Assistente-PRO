@@ -50,6 +50,17 @@ class V2OnboardingScreenTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "CNPJ válido"):
             self.screen._validate_new_company()
 
+    def test_email_link_confirmation_signs_in_before_creating_trial(self):
+        self.screen._pending_email = "cliente@example.com"
+        self.screen.password.setText("SenhaSegura123")
+        with patch.object(self.screen, "_run") as run:
+            self.screen._confirm_from_email_link()
+        operation = run.call_args.args[0]
+        operation()
+        self.auth.sign_in.assert_called_once_with(
+            "cliente@example.com", "SenhaSegura123"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

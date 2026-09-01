@@ -210,7 +210,9 @@ class NewInstallationScreen(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 20px; font-weight: 800; color: #0F172A;")
         layout.addWidget(title)
-        self.verification_text = QLabel("Digite o código de 6 números enviado por e-mail.")
+        self.verification_text = QLabel(
+            "Digite o código de 6 números ou confirme pelo link enviado por e-mail."
+        )
         self.verification_text.setWordWrap(True)
         self.verification_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.verification_text)
@@ -227,6 +229,14 @@ class NewInstallationScreen(QDialog):
         self.verify_button.clicked.connect(self._verify_email)
         self.email_code.returnPressed.connect(self._verify_email)
         layout.addWidget(self.verify_button)
+        self.link_confirmed_button = QPushButton("Já confirmei pelo link do e-mail")
+        self.link_confirmed_button.setStyleSheet(
+            "QPushButton { background: #E2E8F0; color: #334155; border: none; }"
+            "QPushButton:hover { background: #CBD5E1; }"
+            "QPushButton:disabled { color: #94A3B8; }"
+        )
+        self.link_confirmed_button.clicked.connect(self._confirm_from_email_link)
+        layout.addWidget(self.link_confirmed_button)
         self.content_layout.addWidget(self.verification_form)
 
     def _show_mode(self, mode):
@@ -241,6 +251,7 @@ class NewInstallationScreen(QDialog):
 
     def _set_busy(self, busy, text=""):
         for button in (self.create_button, self.link_button, self.verify_button,
+                       self.link_confirmed_button,
                        self.new_mode_button, self.link_mode_button):
             button.setEnabled(not busy)
         self.status.setText(text)
@@ -292,8 +303,8 @@ class NewInstallationScreen(QDialog):
         self.new_mode_button.setEnabled(False)
         self.link_mode_button.setEnabled(False)
         self.verification_text.setText(
-            f"Enviamos um código de 6 números para {self._pending_email}.\n"
-            "Ele confirma que o endereço pertence a você."
+            f"Enviamos a confirmação para {self._pending_email}.\n"
+            "Use o código, se ele aparecer, ou abra o link e volte a esta tela."
         )
         self.email_code.setFocus()
 
@@ -304,6 +315,13 @@ class NewInstallationScreen(QDialog):
             return
         self._run(lambda: self.auth.verify_signup(self._pending_email, code),
                   lambda _session: self._complete_trial(), "Confirmando seu e-mail...")
+
+    def _confirm_from_email_link(self):
+        self._run(
+            lambda: self.auth.sign_in(self._pending_email, self.password.text()),
+            lambda _session: self._complete_trial(),
+            "Verificando a confirmação do seu e-mail...",
+        )
 
     def _complete_trial(self):
         self._run(
@@ -316,6 +334,8 @@ class NewInstallationScreen(QDialog):
 
     def _trial_created(self, result):
         self.manager.secure_backend.save_installation_token(result.get("installation_token"))
+        self.password.clear()
+        self.password_confirmation.clear()
         self._set_busy(False)
         QMessageBox.information(
             self, "Cadastro concluído",

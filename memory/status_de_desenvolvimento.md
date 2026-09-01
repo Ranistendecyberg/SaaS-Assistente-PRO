@@ -234,8 +234,8 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Implementado localmente o primeiro acesso da versão 2.0: criação da conta por e-mail e senha, confirmação por código, validação de CNPJ e liberação automática do computador principal em trial de 2 dias.
 - A criação de empresa, matriz, proprietário, instalação principal, assinatura e licença de compatibilidade é atômica no servidor. O token bruto do computador é devolvido uma única vez; o banco mantém somente seu hash.
 - Criado controle de tentativas com hash do hardware e limite de cinco tentativas por usuário a cada hora. CNPJ e computador não podem reutilizar o trial.
-- A nova tela também contempla computador adicional por login e código descartável de vínculo, além da solicitação de recuperação de senha.
+- A nova tela também contempla computador adicional por login e código descartável de vínculo, além da solicitação de recuperação de senha. A confirmação do primeiro e-mail aceita código de 6 números ou o link padrão do Supabase, sem exigir SMTP personalizado nesta fase.
 - O fluxo novo não contém Firebase, código de migração nem solicitação de licença no cadastro inicial. Telas antigas de cadastro/migração e testes Firebase obsoletos foram removidos somente da pasta isolada da v2.
 - A janela de primeiro acesso é adaptável a notebooks com menor altura e mantém o formulário em área rolável.
-- Validação local: **67 testes automatizados aprovados**, compilação Python aprovada e `deno check` aprovado nas Edge Functions `account-api`, `desktop-api` e `admin-api`.
-- **Nada desta etapa foi implantado no Supabase.** Antes do teste integrado será necessário aplicar a migração 011, publicar as funções, habilitar deliberadamente novos cadastros e configurar o e-mail do Supabase para exibir o código de confirmação.
+- Validação local: **68 testes automatizados aprovados**, compilação Python aprovada e `deno check` aprovado nas Edge Functions `account-api`, `desktop-api` e `admin-api`.
+- **Nada desta etapa foi implantado no Supabase.** Antes do teste integrado será necessário aplicar as migrações 010 e 011, publicar as funções e habilitar deliberadamente novos cadastros. O e-mail padrão por link já é compatível com a tela.
