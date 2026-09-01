@@ -9,9 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 SUPABASE_URL = "https://hnwvtoiiuqagzmuqygkw.supabase.co"
-# O Gerador 2.0 permanece bloqueado até a chave publicável do novo projeto
-# ser configurada. Nunca reutilizar a chave do projeto da v1.9.6.
-SUPABASE_PUBLISHABLE_KEY = ""
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_B9FIBJ6QvRZ691rGqN5Drw_W-GOXmsI"
 
 
 class SupabaseAuthError(RuntimeError):

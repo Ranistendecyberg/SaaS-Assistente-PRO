@@ -199,8 +199,9 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 
 - Projeto criado: `saas-assistente-desktop-v2-prod`, referência pública `hnwvtoiiuqagzmuqygkw`, região São Paulo, estado Healthy.
 - Removido da cópia 2.0 o vínculo temporário do projeto Supabase da 1.9.6 e alterado `supabase/config.toml` para a referência nova.
-- Desktop e Gerador 2.0 apontam para a URL nova, mas a chave publicável permanece vazia até a configuração controlada; portanto, ainda não conseguem acessar nenhum backend real.
+- O cliente Supabase do Desktop 2.0 e o Gerador 2.0 apontam para a URL nova e receberam a chave publicável própria do projeto. Nenhuma chave secreta ou `service_role` foi colocada no código.
+- A antiga camada `license_manager.py` ainda existe como código legado copiado, mas não deve integrar a entrega 2.0. Sua substituição completa pelo fluxo Supabase v2 permanece obrigatória antes do primeiro instalador beta.
 - Ferramentas e dados específicos da antiga importação Firebase foram removidos da pasta 2.0. O original continua preservado na pasta 1.9.6.
 - Criado SQL consolidado e limpo em `supabase/bootstrap/FOUNDATION_V2_SQL_EDITOR.sql`; varredura confirmou ausência de IDs de máquinas, chaves ou referência ao projeto antigo.
 - Fundação executada com sucesso no novo Supabase. Verificação final retornou `current_version=0.0.0`, `default_monthly_price=300.00` e `maintenance_mode=false`.
-- Regressões locais na pasta 2.0: **43 testes aprovados**.
+- Regressões locais na pasta 2.0: **63 testes aprovados**; o teste exclusivo do importador Firebase antigo foi removido junto com esse componente legado de migração.

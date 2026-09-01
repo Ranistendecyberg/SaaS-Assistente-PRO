@@ -20,9 +20,7 @@ from src.core.paths import get_base_dir
 
 
 SUPABASE_URL = "https://hnwvtoiiuqagzmuqygkw.supabase.co"
-# Preenchida somente depois que a fundação 2.0 estiver validada. Manter vazio
-# impede que a cópia de desenvolvimento converse com o projeto da v1.9.6.
-SUPABASE_PUBLISHABLE_KEY = ""
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_B9FIBJ6QvRZ691rGqN5Drw_W-GOXmsI"
 DESKTOP_API_PATH = "/functions/v1/desktop-api"
 
 
