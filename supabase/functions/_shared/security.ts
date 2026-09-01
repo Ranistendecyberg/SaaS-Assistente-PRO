@@ -20,18 +20,42 @@ export function randomToken(bytes = 32): string {
   return [...data].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function requireAdmin(req: Request, mutation = false) {
+function jwtPayload(token: string): Record<string, unknown> {
+  const encodedPayload = token.split(".")[1];
+  if (!encodedPayload) throw new Error("UNAUTHORIZED");
+  const normalized = encodedPayload.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(
+    normalized.length + ((4 - normalized.length % 4) % 4),
+    "=",
+  );
+  try {
+    return JSON.parse(
+      new TextDecoder().decode(
+        Uint8Array.from(atob(padded), (char) => char.charCodeAt(0)),
+      ),
+    );
+  } catch {
+    throw new Error("UNAUTHORIZED");
+  }
+}
+
+export async function requireUser(req: Request) {
   const authorization = req.headers.get("authorization") || "";
   if (!authorization.startsWith("Bearer ")) throw new Error("UNAUTHORIZED");
   const token = authorization.slice(7);
   const client = serviceClient();
-  const { data: authData, error: authError } = await client.auth.getUser(token);
-  if (authError || !authData.user) throw new Error("UNAUTHORIZED");
+  const { data, error } = await client.auth.getUser(token);
+  if (error || !data.user) throw new Error("UNAUTHORIZED");
+  return { client, user: data.user, payload: jwtPayload(token) };
+}
+
+export async function requireAdmin(req: Request, mutation = false) {
+  const { client, user, payload } = await requireUser(req);
 
   const { data: admin, error: adminError } = await client
     .from("admin_users")
     .select("user_id, role, active")
-    .eq("user_id", authData.user.id)
+    .eq("user_id", user.id)
     .maybeSingle();
   if (adminError) {
     console.error("admin_users lookup failed", adminError.code, adminError.message);
@@ -39,24 +63,11 @@ export async function requireAdmin(req: Request, mutation = false) {
   }
   if (!admin?.active) throw new Error("FORBIDDEN");
 
-  const encodedPayload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-  const paddedPayload = encodedPayload.padEnd(
-    encodedPayload.length + ((4 - encodedPayload.length % 4) % 4),
-    "=",
-  );
-  const payload = JSON.parse(
-    new TextDecoder().decode(
-      Uint8Array.from(
-        atob(paddedPayload),
-        (char) => char.charCodeAt(0),
-      ),
-    ),
-  );
   if (mutation && !["owner", "admin"].includes(admin.role)) {
     throw new Error("FORBIDDEN");
   }
   if (mutation && payload.aal !== "aal2") throw new Error("MFA_REQUIRED");
-  return { client, user: authData.user, admin };
+  return { client, user, admin };
 }
 
 export async function requireInstallation(req: Request, hardwareId: string) {

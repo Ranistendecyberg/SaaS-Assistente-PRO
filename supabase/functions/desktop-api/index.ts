@@ -1,7 +1,7 @@
 import { jsonResponse, readJson, cleanText } from "../_shared/http.ts";
 import {
   claimLegacyInstallation, installationBootstrapMode, randomToken,
-  requireInstallation, serviceClient, sha256,
+  requireInstallation, requireUser, serviceClient, sha256,
 } from "../_shared/security.ts";
 
 Deno.serve(async (req) => {
@@ -74,6 +74,20 @@ Deno.serve(async (req) => {
         hardware_id: installation.hardware_id,
         installation_token: installationToken,
       });
+    }
+
+    if (action === "redeem_device_link_code") {
+      const code = cleanText(body.link_code, 160).toUpperCase();
+      if (code.length < 20) return jsonResponse({ error: "INVALID_LINK_CODE" }, 400);
+      const { client, user } = await requireUser(req);
+      const { data, error } = await client.rpc("redeem_device_link_code_server", {
+        p_code_hash: await sha256(code),
+        p_hardware_id: hardwareId,
+        p_user_id: user.id,
+        p_app_version: cleanText(body.app_version, 40) || null,
+      });
+      if (error) throw error;
+      return jsonResponse(data, data?.ok ? 201 : 409);
     }
 
     const { client, installation } = await requireInstallation(req, hardwareId);

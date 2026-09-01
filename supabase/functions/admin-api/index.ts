@@ -81,13 +81,16 @@ Deno.serve(async (req) => {
         status: "pending",
       }).eq("id", installation.id);
       if (updateError) throw updateError;
+      const relatedCompany = Array.isArray(installation.companies)
+        ? installation.companies[0]
+        : installation.companies;
       await audit(client, user.id, "installation.migration_claim_issued", "installation", installation.id, {
         usable_until: usableUntil,
       });
       return jsonResponse({
         ok: true,
         hardware_id: installation.hardware_id,
-        company_name: installation.companies?.name || "",
+        company_name: relatedCompany?.name || "",
         claim_code: claimCode,
         usable_until: usableUntil,
       });

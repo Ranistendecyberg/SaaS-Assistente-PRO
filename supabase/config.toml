@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.desktop-api]
 verify_jwt = false
+
+[functions.account-api]
+verify_jwt = false

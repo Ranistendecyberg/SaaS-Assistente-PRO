@@ -207,3 +207,12 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Autenticação endurecida no projeto v2: cadastro público, login anônimo e vinculação manual desativados; e-mail confirmado e TOTP habilitados; SMS MFA desabilitado.
 - Primeiro usuário administrativo criado no Supabase Auth e vinculado em `public.admin_users` como `owner`, com estado ativo. E-mail, senha e identificador do usuário não são registrados nesta memória.
 - Regressões locais na pasta 2.0: **63 testes aprovados**; o teste exclusivo do importador Firebase antigo foi removido junto com esse componente legado de migração.
+
+## Primeira camada empresarial v2 — 01/09/2026
+
+- Criada localmente a `account-api`, autenticada por usuário e associação ativa à empresa. Alterações exigem papel `owner`/`admin` e sessão MFA `aal2`.
+- Implementados resumo empresarial, cadastro validado de matriz/filial, código descartável de vínculo com validade de 24 horas e agendamento/cancelamento da remoção de computador adicional.
+- Criado resgate atômico do código de vínculo: bloqueio transacional, validação da associação do usuário, classificação principal/adicional e armazenamento exclusivo do hash do token.
+- O Desktop passou a reconhecer o contrato de resgate do código por usuário autenticado. A interface e o fluxo de login ainda não foram conectados.
+- **Nada desta camada foi implantado no Supabase.** Antes do deploy ainda será necessário remover os endpoints legados e adaptar o onboarding.
+- Regressões locais após esta camada: **66 testes aprovados** e as três Edge Functions aprovadas no `deno check` com as dependências oficiais do Supabase.
