@@ -204,4 +204,6 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Ferramentas e dados específicos da antiga importação Firebase foram removidos da pasta 2.0. O original continua preservado na pasta 1.9.6.
 - Criado SQL consolidado e limpo em `supabase/bootstrap/FOUNDATION_V2_SQL_EDITOR.sql`; varredura confirmou ausência de IDs de máquinas, chaves ou referência ao projeto antigo.
 - Fundação executada com sucesso no novo Supabase. Verificação final retornou `current_version=0.0.0`, `default_monthly_price=300.00` e `maintenance_mode=false`.
+- Autenticação endurecida no projeto v2: cadastro público, login anônimo e vinculação manual desativados; e-mail confirmado e TOTP habilitados; SMS MFA desabilitado.
+- Primeiro usuário administrativo criado no Supabase Auth e vinculado em `public.admin_users` como `owner`, com estado ativo. E-mail, senha e identificador do usuário não são registrados nesta memória.
 - Regressões locais na pasta 2.0: **63 testes aprovados**; o teste exclusivo do importador Firebase antigo foi removido junto com esse componente legado de migração.
