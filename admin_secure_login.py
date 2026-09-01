@@ -44,7 +44,7 @@ def _fatal_error(exc_type, exc_value, exc_traceback):
 
 
 class SecureLoginApp(ctk.CTk):
-    def __init__(self):
+    def __init__(self, enroll_only=False):
         super().__init__()
         self.title("Assistente PRO — Login Seguro")
         self.geometry("500x560")
@@ -52,6 +52,7 @@ class SecureLoginApp(ctk.CTk):
         self.resizable(False, False)
         self.eval("tk::PlaceWindow . center")
         self.auth_client = AdminSupabaseClient()
+        self.enroll_only = bool(enroll_only)
         self.pending_session = None
         self.pending_factor_id = ""
 
@@ -302,6 +303,12 @@ class SecureLoginApp(ctk.CTk):
         threading.Thread(target=work, daemon=True).start()
 
     def _finish_access(self, session, mfa_window=None):
+        if self.enroll_only:
+            if mfa_window is not None:
+                mfa_window.grab_release()
+                mfa_window.destroy()
+            self._show_enrollment_success()
+            return
         self._busy(True, "Confirmando permissão administrativa...")
 
         def work():
@@ -314,6 +321,67 @@ class SecureLoginApp(ctk.CTk):
                 )
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _show_enrollment_success(self):
+        """Keep the confirmation visible until the administrator acknowledges it."""
+        self._busy(False, "Verificação em duas etapas ativada com sucesso.")
+        window = ctk.CTkToplevel(self)
+        window.title("MFA ativado")
+        window.geometry("470x330")
+        window.resizable(False, False)
+        window.configure(fg_color=COLOR_BG)
+        window.transient(self)
+        window.protocol("WM_DELETE_WINDOW", self.destroy)
+
+        card = ctk.CTkFrame(
+            window,
+            fg_color=COLOR_CARD,
+            corner_radius=16,
+            border_width=1,
+            border_color=COLOR_BORDER,
+        )
+        card.pack(fill="both", expand=True, padx=24, pady=24)
+        ctk.CTkLabel(
+            card,
+            text="✓",
+            width=58,
+            height=58,
+            corner_radius=29,
+            fg_color=COLOR_SUCCESS,
+            text_color=COLOR_TEXT,
+            font=ctk.CTkFont(size=30, weight="bold"),
+        ).pack(pady=(28, 12))
+        ctk.CTkLabel(
+            card,
+            text="MFA ATIVADO COM SUCESSO",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLOR_TEXT,
+        ).pack()
+        ctk.CTkLabel(
+            card,
+            text="Seu acesso administrativo agora está protegido.\n\n"
+            "Clique em Concluir para fechar esta etapa.",
+            font=ctk.CTkFont(size=12),
+            text_color=COLOR_MUTED,
+            justify="center",
+        ).pack(pady=(10, 20))
+        ctk.CTkButton(
+            card,
+            text="CONCLUIR",
+            width=280,
+            height=42,
+            command=self.destroy,
+            fg_color=COLOR_SUCCESS,
+            hover_color=COLOR_SUCCESS_HOVER,
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).pack()
+
+        def show_modal():
+            window.lift()
+            window.focus_force()
+            window.grab_set()
+
+        window.after(50, show_modal)
 
     def _open_panel(self, session, mfa_window=None):
         if mfa_window is not None:
@@ -344,5 +412,4 @@ class SecureLoginApp(ctk.CTk):
 
 def run():
     sys.excepthook = _fatal_error
-    SecureLoginApp().mainloop()
-
+    SecureLoginApp(enroll_only="--enroll-only" in sys.argv).mainloop()
