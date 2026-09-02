@@ -43,6 +43,18 @@ class SupabaseUserClientTests(unittest.TestCase):
         self.assertNotIn("123456", stored)
         self.assertNotIn("cliente@example.com", stored)
 
+    @patch("src.core.supabase_auth._dpapi_transform", side_effect=lambda data, decrypt=False: data)
+    def test_session_accepts_opaque_refresh_token_without_assuming_its_length(self, _transform):
+        response = {
+            "access_token": "signed-access-token",
+            "refresh_token": "opaque",
+            "expires_in": 3600,
+            "user": {"id": "user-123"},
+        }
+        session = self.client._session_from_response(response)
+        self.assertEqual(session.refresh_token, "opaque")
+        self.assertEqual(self.client.load_session().refresh_token, "opaque")
+
     def test_company_trial_uses_authenticated_account_api(self):
         expected = {"ok": True, "installation_token": "x" * 64}
         with patch.object(self.client, "account_request", return_value=expected) as request:

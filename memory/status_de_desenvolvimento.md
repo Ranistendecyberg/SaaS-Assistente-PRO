@@ -256,3 +256,10 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - O onboarding foi corrigido para tentar autenticar imediatamente após o cadastro sem sessão. Se o e-mail já estiver confirmado e a senha corresponder, o fluxo continua para a criação da empresa e do trial; se for uma conta realmente nova e ainda não confirmada, a tela de confirmação continua sendo exibida.
 - Credencial incorreta agora informa que o e-mail pode já possuir conta e orienta usar a senha existente ou a recuperação disponível em **Computador adicional**.
 - Validação local final após a correção: **71 testes automatizados aprovados** e compilação Python aprovada.
+
+## Correção da sessão após confirmação do e-mail — 01/09/2026
+
+- O teste com um e-mail novo confirmou que o envio e a confirmação do Supabase Auth funcionam. O erro visual em `localhost:3000` ocorre somente no redirecionamento padrão posterior à confirmação; a conta já fica confirmada no servidor.
+- O Desktop recusava a sessão autenticada por impor comprimentos mínimos arbitrários ao `access_token` e ao `refresh_token`. Tokens do Supabase são opacos e não possuem tamanho contratual fixo.
+- A validação local agora exige a presença dos tokens e do identificador do usuário; a autenticidade continua sendo verificada pelo próprio Supabase em cada chamada. Nenhuma senha ou token é exibido ou gravado sem DPAPI.
+- Validação após a correção: **72 testes automatizados aprovados** e compilação Python aprovada.

@@ -83,7 +83,10 @@ class SupabaseUserClient:
         refresh_token = str(response.get("refresh_token") or "")
         user = dict(response.get("user") or {})
         expires_in = int(response.get("expires_in") or 3600)
-        if len(access_token) < 40 or len(refresh_token) < 20 or not user.get("id"):
+        # Os tokens do GoTrue sao opacos e seu tamanho pode mudar entre versoes.
+        # A autenticidade do access token e validada pelo Supabase em cada chamada;
+        # aqui basta exigir que os campos obrigatorios tenham sido devolvidos.
+        if not access_token or not refresh_token or not user.get("id"):
             raise DesktopBackendError("INVALID_SERVER_RESPONSE")
         session = UserSession(
             access_token=access_token,
@@ -122,7 +125,7 @@ class SupabaseUserClient:
                 expires_at=int(payload.get("expires_at") or 0),
                 user_id=str(payload.get("user_id") or ""),
             )
-            if len(session.access_token) < 40 or len(session.refresh_token) < 20:
+            if not session.access_token or not session.refresh_token or not session.user_id:
                 return None
             return session
         except (OSError, ValueError, TypeError, json.JSONDecodeError, DesktopBackendError):
@@ -167,7 +170,7 @@ class SupabaseUserClient:
     def refresh_session(self, refresh_token: str = "") -> UserSession:
         current = self.load_session()
         token = refresh_token or (current.refresh_token if current else "")
-        if len(token) < 20:
+        if not token:
             raise DesktopBackendError("USER_SESSION_REQUIRED")
         response = self._post(
             f"{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token",
