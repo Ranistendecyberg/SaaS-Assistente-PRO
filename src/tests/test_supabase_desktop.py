@@ -1,7 +1,7 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from src.core.supabase_desktop import DesktopBackendError, SupabaseDesktopClient
 
@@ -50,6 +50,19 @@ class SupabaseDesktopClientTests(unittest.TestCase):
         with patch.object(self.client, "_request", return_value={"ok": True, "aprovado": False}) as request:
             self.client.check_pix("PAYMENT-ABC")
         request.assert_called_once_with("check_pix", {"payment_id": "PAYMENT-ABC"})
+
+    @patch("src.core.supabase_desktop.SUPABASE_PUBLISHABLE_KEY", "public-test-key")
+    @patch("src.core.supabase_desktop.urllib.request.urlopen")
+    def test_chamada_da_instalacao_envia_autorizacao_publicavel(self, urlopen):
+        response = MagicMock()
+        response.read.return_value = b'{"ok": true}'
+        urlopen.return_value.__enter__.return_value = response
+        with patch.object(self.client, "load_session") as session:
+            session.return_value.token = "t" * 64
+            self.client._request("license_status")
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.headers["Apikey"], "public-test-key")
+        self.assertEqual(request.headers["Authorization"], "Bearer public-test-key")
 
 
 if __name__ == "__main__":

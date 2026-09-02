@@ -239,3 +239,13 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - A janela de primeiro acesso é adaptável a notebooks com menor altura e mantém o formulário em área rolável.
 - Validação local: **68 testes automatizados aprovados**, compilação Python aprovada e `deno check` aprovado nas Edge Functions `account-api`, `desktop-api` e `admin-api`.
 - **Nada desta etapa foi implantado no Supabase.** Antes do teste integrado será necessário aplicar as migrações 010 e 011, publicar as funções e habilitar deliberadamente novos cadastros. O e-mail padrão por link já é compatível com a tela.
+
+## Implantação controlada do onboarding no Supabase v2 — 01/09/2026
+
+- As migrações `010_v2_device_link_redemption.sql` e `011_v2_company_trial_onboarding.sql` foram aplicadas com sucesso no projeto isolado `saas-assistente-desktop-v2-prod` pelo SQL Editor.
+- As Edge Functions `account-api`, `desktop-api` e `admin-api` foram publicadas pelo editor do Supabase a partir dos fontes locais validados. Todas mantêm a verificação JWT da plataforma e as validações próprias de usuário/instalação/MFA.
+- O cadastro de novos usuários foi habilitado. Confirmação de e-mail permanece ligada; cadastro anônimo e vínculo manual externo permanecem desligados.
+- O Desktop passou a enviar a chave publicável também no cabeçalho `Authorization`, conforme o contrato da plataforma. Nenhuma chave secreta foi adicionada.
+- Teste remoto negativo nas três funções retornou `401 UNAUTHORIZED`, confirmando que estão online e recusam requisições sem credenciais válidas.
+- Validação local final: **69 testes aprovados**, compilação Python aprovada e as três funções aprovadas no `deno check`.
+- Ainda não foi criado usuário/empresa de teste nem consumido trial real. O próximo passo deve usar um e-mail e CNPJ destinados ao teste integrado para validar todo o fluxo do primeiro acesso.

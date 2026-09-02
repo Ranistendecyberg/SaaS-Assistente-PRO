@@ -121,6 +121,7 @@ class SupabaseDesktopClient:
         body = {"action": action, "hardware_id": self.hardware_id, **(payload or {})}
         headers = {
             "apikey": SUPABASE_PUBLISHABLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_PUBLISHABLE_KEY}",
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-Client-Info": "saas-assistente-desktop/2.0",
