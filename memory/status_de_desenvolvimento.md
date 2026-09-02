@@ -263,3 +263,11 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - O Desktop recusava a sessão autenticada por impor comprimentos mínimos arbitrários ao `access_token` e ao `refresh_token`. Tokens do Supabase são opacos e não possuem tamanho contratual fixo.
 - A validação local agora exige a presença dos tokens e do identificador do usuário; a autenticidade continua sendo verificada pelo próprio Supabase em cada chamada. Nenhuma senha ou token é exibido ou gravado sem DPAPI.
 - Validação após a correção: **72 testes automatizados aprovados** e compilação Python aprovada.
+
+## Primeiro onboarding empresarial integrado concluído — 01/09/2026
+
+- O primeiro cadastro real da versão 2.0 confirmou o envio e a validação de e-mail, o login e a persistência das sessões protegidas pelo DPAPI.
+- A primeira tentativa de criação do trial retornou erro 500 porque o `pgcrypto` do Supabase está no schema `extensions`, enquanto a função `create_company_trial_server` enxergava somente `public` e `auth`.
+- Criada a migração corretiva `012_v2_onboarding_pgcrypto_search_path.sql` e atualizado o SQL-base da migração 011. O ajuste foi aplicado com sucesso no projeto v2 sem remover ou alterar cadastros existentes.
+- Após repetir a operação, o servidor criou a empresa e o computador principal com trial. A verificação somente leitura confirmou sessão do usuário, token de instalação protegido, uma associação empresarial e papel `owner`.
+- O redirecionamento visual para `localhost:3000` após clicar no e-mail ainda deve ser substituído por uma experiência de confirmação mais amigável antes do beta público.

@@ -30,7 +30,7 @@ create or replace function public.create_company_trial_server(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, auth
+set search_path = public, auth, extensions
 as $$
 declare
   v_company_id uuid;
