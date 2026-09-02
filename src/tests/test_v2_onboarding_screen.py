@@ -6,6 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication
 
+from src.core.supabase_desktop import DesktopBackendError
 from src.ui.screens.new_installation_screen import NewInstallationScreen
 
 
@@ -60,6 +61,37 @@ class V2OnboardingScreenTests(unittest.TestCase):
         self.auth.sign_in.assert_called_once_with(
             "cliente@example.com", "SenhaSegura123"
         )
+
+    def test_existing_confirmed_email_signs_in_instead_of_waiting_for_email(self):
+        self.screen.company.setText("Grupo Teste")
+        self.screen.owner.setText("Responsável")
+        self.screen.phone.setText("86999999999")
+        self.screen.email.setText("cliente@example.com")
+        self.screen.password.setText("SenhaSegura123")
+        self.screen.password_confirmation.setText("SenhaSegura123")
+        self.screen.cnpj.setText("11.222.333/0001-81")
+        self.auth.sign_up.return_value = {"user": {"id": "opaque"}}
+        with patch.object(self.screen, "_run") as run:
+            self.screen._start_signup()
+        operation = run.call_args.args[0]
+        self.assertEqual(operation(), {"authenticated": True})
+        self.auth.sign_in.assert_called_once_with(
+            "cliente@example.com", "SenhaSegura123"
+        )
+
+    def test_new_unconfirmed_email_still_opens_confirmation_step(self):
+        self.screen.company.setText("Grupo Novo")
+        self.screen.owner.setText("Responsável")
+        self.screen.phone.setText("86999999999")
+        self.screen.email.setText("novo@example.com")
+        self.screen.password.setText("SenhaSegura123")
+        self.screen.password_confirmation.setText("SenhaSegura123")
+        self.screen.cnpj.setText("11.222.333/0001-81")
+        self.auth.sign_up.return_value = {"user": {"id": "new"}}
+        self.auth.sign_in.side_effect = DesktopBackendError("EMAIL_NOT_CONFIRMED", 400)
+        with patch.object(self.screen, "_run") as run:
+            self.screen._start_signup()
+        self.assertEqual(run.call_args.args[0](), {"confirmation_required": True})
 
 
 if __name__ == "__main__":

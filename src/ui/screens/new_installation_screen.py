@@ -289,12 +289,23 @@ class NewInstallationScreen(QDialog):
             QMessageBox.warning(self, "Confira o cadastro", str(error))
             return
         self._pending_email = email
-        self._run(lambda: self.auth.sign_up(email, password), self._signup_started,
-                  "Criando sua conta segura...")
+        def operation():
+            response = self.auth.sign_up(email, password)
+            if response.get("access_token"):
+                return {"authenticated": True}
+            try:
+                self.auth.sign_in(email, password)
+                return {"authenticated": True}
+            except DesktopBackendError as error:
+                if error.code in {"EMAIL_NOT_CONFIRMED", "EMAIL_NOT_VERIFIED"}:
+                    return {"confirmation_required": True}
+                raise
+
+        self._run(operation, self._signup_started, "Criando sua conta segura...")
 
     def _signup_started(self, response):
         self._set_busy(False)
-        if response.get("access_token"):
+        if response.get("authenticated"):
             self._complete_trial()
             return
         self.new_form.setVisible(False)
@@ -393,12 +404,20 @@ class NewInstallationScreen(QDialog):
                 "SIGNUPS_NOT_ALLOWED": "O cadastro de novas contas ainda não foi liberado no servidor de testes.",
                 "USER_ALREADY_REGISTERED": "Este e-mail já possui conta. Use Computador adicional.",
                 "EMAIL_CONFIRMATION_REQUIRED": "Confirme o e-mail antes de concluir o cadastro.",
+                "EMAIL_NOT_CONFIRMED": "Abra o link recebido no e-mail e tente novamente.",
+                "EMAIL_NOT_VERIFIED": "Abra o link recebido no e-mail e tente novamente.",
                 "CNPJ_ALREADY_REGISTERED": "Este CNPJ já está vinculado a uma conta empresarial.",
                 "USER_ALREADY_HAS_COMPANY": "Este usuário já pertence a uma empresa.",
                 "INVALID_ONBOARDING": "Confira os dados da empresa, CNPJ e responsável.",
                 "ONBOARDING_RATE_LIMITED": "Foram feitas muitas tentativas. Aguarde uma hora e tente novamente.",
-                "INVALID_LOGIN_CREDENTIALS": "E-mail ou senha incorretos.",
-                "INVALID_CREDENTIALS": "E-mail ou senha incorretos.",
+                "INVALID_LOGIN_CREDENTIALS": (
+                    "Este e-mail pode já estar cadastrado. Use a senha existente ou, "
+                    "em Computador adicional, solicite a recuperação da senha."
+                ),
+                "INVALID_CREDENTIALS": (
+                    "Este e-mail pode já estar cadastrado. Use a senha existente ou, "
+                    "em Computador adicional, solicite a recuperação da senha."
+                ),
                 "OTP_EXPIRED": "O código expirou ou está incorreto. Solicite um novo cadastro.",
                 "LINK_CODE_EXPIRED": "O código expirou. Gere outro no computador principal.",
                 "LINK_CODE_NOT_AVAILABLE": "O código já foi utilizado, revogado ou não existe.",

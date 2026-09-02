@@ -249,3 +249,10 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Teste remoto negativo nas três funções retornou `401 UNAUTHORIZED`, confirmando que estão online e recusam requisições sem credenciais válidas.
 - Validação local final: **69 testes aprovados**, compilação Python aprovada e as três funções aprovadas no `deno check`.
 - Ainda não foi criado usuário/empresa de teste nem consumido trial real. O próximo passo deve usar um e-mail e CNPJ destinados ao teste integrado para validar todo o fluxo do primeiro acesso.
+
+## Correção de conta já existente no primeiro acesso — 01/09/2026
+
+- O primeiro teste integrado utilizou o mesmo e-mail já cadastrado e confirmado como administrador do projeto v2. Nesse cenário, por proteção contra enumeração de usuários, o Supabase não cria outra conta nem envia uma nova confirmação.
+- O onboarding foi corrigido para tentar autenticar imediatamente após o cadastro sem sessão. Se o e-mail já estiver confirmado e a senha corresponder, o fluxo continua para a criação da empresa e do trial; se for uma conta realmente nova e ainda não confirmada, a tela de confirmação continua sendo exibida.
+- Credencial incorreta agora informa que o e-mail pode já possuir conta e orienta usar a senha existente ou a recuperação disponível em **Computador adicional**.
+- Validação local final após a correção: **71 testes automatizados aprovados** e compilação Python aprovada.
