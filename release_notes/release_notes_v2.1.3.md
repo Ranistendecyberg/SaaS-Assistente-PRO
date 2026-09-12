@@ -29,4 +29,4 @@
 - Tamanho: `201277520` bytes
 - SHA-256: `6cc9223ca379cef0736775e708673973a445448c9599d6de6087e439af8d4176`
 
-Observação: esta build ainda não possui assinatura digital Authenticode e pode gerar aviso do Windows SmartScreen. O binário ainda não foi enviado ao canal público/OTA.
+Observação: esta build ainda não possui assinatura digital Authenticode e pode gerar aviso do Windows SmartScreen. A versão foi publicada no GitHub e disponibilizada via OTA opcional.

@@ -87,3 +87,8 @@ As migrações 024–029 foram aplicadas no Supabase remoto e as Edge Functions
 ACLs e respostas 401 sem autenticação. Supabase Cron 1.6.4 foi habilitado e o job
 `saas-hourly-maintenance` ficou ativo com execução horária. Não houve operação
 sobre contas ou pagamentos reais nesta revisão.
+
+Após o aceite de distribuição sem Authenticode, o código foi publicado na `main`,
+a release `v2.1.3` foi criada no GitHub e o instalador remoto confirmou o mesmo
+tamanho e SHA-256 do artefato local. O Supabase passou a oferecer a 2.1.3 como
+atualização opcional (`minimum_version=0.0.0`, `update_required=false`).

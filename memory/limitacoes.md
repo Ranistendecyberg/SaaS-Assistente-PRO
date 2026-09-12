@@ -5,7 +5,7 @@
 - Migrações 024–029 e `account-api`/`cron-worker` foram publicados no Supabase remoto após validação local/PGlite e em clone PostgreSQL 17.11.
 - Supabase Cron 1.6.4 está habilitado e o job `saas-hourly-maintenance` está ativo. O `cron-worker` permanece como fallback protegido por `CRON_SECRET`; sem esse segredo, responde 401 e não executa manutenção.
 - O instalador 2.1.3 tem hash/manifeste e smoke test aprovados, porém não possui assinatura Authenticode; o Windows SmartScreen pode exibir aviso até a assinatura com certificado de editor.
-- O binário 2.1.3 ainda não foi enviado ao canal de distribuição nem anunciado via OTA: o GitHub CLI deste ambiente não está autenticado e a publicação ampla deve ocorrer somente após decidir entre assinatura digital ou aceite explícito do aviso do SmartScreen.
+- O binário 2.1.3 foi publicado no GitHub e anunciado via OTA opcional após aceite explícito do possível aviso do SmartScreen. `minimum_version=0.0.0` e `update_required=false`, portanto versões antigas não foram bloqueadas.
 
 - Entrega 2.0.7 compilada; substitui pendência de build abaixo. Permanece aceite em máquina real, consulta autenticada com provedor, concorrência e entrega externa de webhook. Não confundir testes isolados com esses aceites.
 

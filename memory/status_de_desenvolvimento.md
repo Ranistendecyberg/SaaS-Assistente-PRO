@@ -11,7 +11,9 @@
 - Smoke test instalou silenciosamente em pasta isolada, confirmou binário idêntico e foi removido sem reinício. A instalação oficial existente foi preservada e seu atalho do Menu Iniciar restaurado após o teste.
 - Migrações 024–029 aplicadas no Supabase de produção. `account-api` e `cron-worker` publicados; postflight confirmou as ACLs, endpoint sem autenticação respondeu 401 e nenhuma conta/pagamento real foi alterada.
 - `pg_cron` 1.6.4 habilitado e job `saas-hourly-maintenance` ativo a cada hora para as três rotinas de limpeza em lote.
-- Análise completa e limites residuais registrados em `memory/analise_escalabilidade_2026-09-11.md`. O instalador ainda não está assinado digitalmente e a publicação do binário/OTA aguarda canal autenticado e decisão sobre o aviso do SmartScreen.
+- Código publicado na `main` e release pública `v2.1.3` criada no GitHub. O asset remoto confirmou 201.277.520 bytes e SHA-256 `6cc9223ca379cef0736775e708673973a445448c9599d6de6087e439af8d4176`.
+- OTA ativado no Supabase como opcional: `current_version=2.1.3`, `minimum_version=0.0.0`, `update_required=false`, com URL pública e SHA-256 conferidos no postflight.
+- Análise completa e limites residuais registrados em `memory/analise_escalabilidade_2026-09-11.md`. O instalador ainda não está assinado digitalmente, repetindo o modelo de distribuição da 1.9.6 com possível aviso do SmartScreen.
 
 ## Otimizações de escalabilidade — 11/09/2026
 

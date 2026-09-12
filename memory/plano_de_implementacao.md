@@ -12,6 +12,7 @@
 - [x] Gerar, conferir manifesto/hash e instalar em pasta isolada o instalador oficial 2.1.3.
 - [x] Aplicar migrações 024–029 e publicar `account-api`/`cron-worker` no Supabase remoto.
 - [x] Habilitar Supabase Cron, confirmar o job `saas-hourly-maintenance` e executar postflight remoto.
+- [x] Publicar código e release 2.1.3 no GitHub e ativar OTA opcional com URL/SHA-256 conferidos.
 - [ ] Assinar o instalador com certificado Authenticode antes de uma distribuição sem alerta do SmartScreen.
 - [ ] Migrar JSON para SQLite somente após atingir o gatilho e concluir migração reversível.
 
