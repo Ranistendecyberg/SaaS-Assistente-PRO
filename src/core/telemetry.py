@@ -2,6 +2,13 @@
 
 Nunca envia dados de clientes, conteúdo de páginas, tokens ou URLs completas.
 Eventos que não puderem ser enviados permanecem em uma fila local limitada.
+
+Mudanças de escalabilidade (2.0.7):
+- _save_queue() usa escrita atômica com os.replace(), idêntica ao padrão
+  já adotado pelo DatabaseManager. Elimina risco de corrupção do arquivo
+  de fila em caso de falha durante a escrita.
+- _machine_id() usa cache de classe para não instanciar LicenseManager
+  (e disparar subprocess powershell) a cada criação do TelemetryClient.
 """
 
 from __future__ import annotations
@@ -27,13 +34,26 @@ SENSITIVE_KEYS = {
     "token", "senha", "password", "url", "link",
 }
 
+# Cache de classe para o hardware ID — evita subprocess repetido
+_cached_machine_id: str = ""
+_machine_id_lock = threading.Lock()
+
 
 def _machine_id() -> str:
-    try:
-        from src.core.license_manager import LicenseManager
-        return LicenseManager().get_hardware_id()
-    except Exception:
-        return str(uuid.getnode())
+    """Retorna o hardware ID, usando cache de classe para evitar subprocesso repetido."""
+    global _cached_machine_id
+    if _cached_machine_id:
+        return _cached_machine_id
+    with _machine_id_lock:
+        if _cached_machine_id:
+            return _cached_machine_id
+        try:
+            # Tenta reutilizar o chassis já obtido pelo LicenseManager singleton
+            from src.core.license_manager import LicenseManager
+            _cached_machine_id = LicenseManager._cached_chassi or LicenseManager.get_instance().get_hardware_id()
+        except Exception:
+            _cached_machine_id = str(uuid.getnode())
+    return _cached_machine_id
 
 
 def anonymous_id(value) -> str:
@@ -97,11 +117,20 @@ class TelemetryClient:
             return []
 
     def _save_queue(self, queue):
+        """Persiste a fila com escrita atômica para evitar corrupção."""
+        tmp_path = self.queue_path + ".tmp"
         try:
-            with open(self.queue_path, "w", encoding="utf-8") as file:
+            with open(tmp_path, "w", encoding="utf-8") as file:
                 json.dump(queue[-400:], file, ensure_ascii=False, indent=2)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(tmp_path, self.queue_path)
         except Exception:
-            pass
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
 
     def record(self, component: str, event: str, level: str = "INFO", details=None):
         now = _dt.datetime.now(_dt.timezone.utc)

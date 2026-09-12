@@ -2,7 +2,7 @@
 ; Identificação do App
 AppName=SaaS Assistente PRO
 AppId=SaaS Assistente PRO
-AppVersion=1.9.6
+AppVersion=2.1.3
 AppPublisher=Gestao de Qualidade
 AppCopyright=Copyright (C) 2026
 
@@ -14,6 +14,7 @@ DefaultGroupName=SaaS Assistente PRO
 CloseApplications=force
 CloseApplicationsFilter=SaaS Assistente PRO.exe
 RestartApplications=no
+AppMutex=SaaSAssistentePRO.MainWindow
 LicenseFile=src\assets\termos_de_uso.txt
 
 ; Ícones e Visual
@@ -22,14 +23,14 @@ UninstallDisplayIcon={app}\SaaS Assistente PRO.exe
 Compression=lzma2/ultra
 SolidCompression=yes
 OutputDir=dist
-OutputBaseFilename=Instalador_SaaS_Assistente_PRO_v1.9.6
+OutputBaseFilename=Instalador_SaaS_Assistente_PRO_v2.1.3
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar um atalho na Área de Trabalho"; GroupDescription: "Atalhos adicionais:"; Flags: checkedonce
 
 [Files]
 ; Copia o executável principal e o ícone para a pasta de instalação
-Source: "dist\SaaS Assistente PRO v1.9.6.exe"; DestDir: "{app}"; DestName: "SaaS Assistente PRO.exe"; Flags: ignoreversion
+Source: "dist\SaaS Assistente PRO v2.1.3.exe"; DestDir: "{app}"; DestName: "SaaS Assistente PRO.exe"; Flags: ignoreversion
 Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -39,6 +40,6 @@ Name: "{autodesktop}\SaaS Assistente PRO"; Filename: "{app}\SaaS Assistente PRO.
 
 [Run]
 ; Instalação manual: permite ao usuário escolher se deseja abrir o sistema.
-; Atualizações silenciosas não reabrem o executável: o usuário foi orientado
-; pelo próprio sistema a aguardar e iniciar novamente pelo atalho.
+; Em atualizações silenciosas, o Assistente de Atualização reabre o Desktop
+; somente depois que o instalador termina com sucesso.
 Filename: "{app}\SaaS Assistente PRO.exe"; Description: "Iniciar SaaS Assistente PRO agora"; Flags: nowait postinstall skipifsilent

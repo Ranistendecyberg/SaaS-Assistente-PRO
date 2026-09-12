@@ -19,18 +19,23 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import customtkinter as ctk
 
-from admin_supabase import AdminSession, AdminSupabaseClient, friendly_auth_error
+from admin_supabase import (
+    AdminSession, AdminSupabaseClient, enterprise_monthly_total, friendly_auth_error,
+)
+from admin_window_utils import center_window
 
 
-BG = "#0B0F17"
-CARD = "#161F30"
-BORDER = "#24324D"
-TEXT = "#F8FAFC"
-MUTED = "#94A3B8"
-PRIMARY = "#4F46E5"
-SUCCESS = "#10B981"
-DANGER = "#EF4444"
-WARNING = "#F59E0B"
+BG = "#F4F7FB"
+CARD = "#FFFFFF"
+BORDER = "#D9E2EF"
+TEXT = "#0F172A"
+MUTED = "#64748B"
+PRIMARY = "#2563EB"
+SUCCESS = "#059669"
+DANGER = "#DC2626"
+WARNING = "#D97706"
+SIDEBAR = "#0F1B33"
+SIDEBAR_HOVER = "#1C2B49"
 
 
 def _relation(value):
@@ -52,6 +57,11 @@ def _display_date(value):
 def _iso_end_of_day(value):
     parsed = dt.datetime.strptime(value.strip(), "%d/%m/%Y")
     return parsed.replace(hour=22, minute=0, second=0).astimezone().isoformat()
+
+
+def _iso_subscription_end(value):
+    parsed = dt.datetime.strptime(value.strip(), "%d/%m/%Y")
+    return parsed.replace(hour=23, minute=59, second=59).astimezone().isoformat()
 
 
 def _parse_monthly_price(value):
@@ -102,81 +112,98 @@ def _normalize_report_id(value):
 
 class SupabaseAdminApp(ctk.CTk):
     def __init__(self, session: AdminSession):
+        ctk.set_appearance_mode("light")
         super().__init__()
         self.session = session
         self.client = AdminSupabaseClient(timeout=35)
         self.installations = {}
         self.keys = {}
         self.system = {}
+        self.enterprises = {}
         self.client_sort_column = "company"
         self.client_sort_reverse = False
-        self.title("SaaS Assistente PRO — Administração Supabase")
-        screen_w, screen_h = self.winfo_screenwidth(), self.winfo_screenheight()
-        width, height = min(1480, int(screen_w * .94)), min(900, int(screen_h * .90))
-        self.geometry(f"{width}x{height}+{max(0, (screen_w-width)//2)}+{max(0, (screen_h-height)//2)}")
-        self.minsize(1080, 680)
+        self.title("SaaS Assistente PRO — Gerador Admin 2.0 (Prévia)")
+        width, height = 1480, 900
+        self.minsize(960, 600)
         self.configure(fg_color=BG)
+        center_window(self, width, height)
         self._configure_tree_style()
         self._build()
         self._kpi_columns = 4
         self.bind("<Configure>", self._responsive_layout)
-        self.after(0, lambda: self.state("zoomed"))
+        self.after(20, lambda: center_window(self, width, height))
         self.after(150, self.refresh_all)
 
     def _configure_tree_style(self):
         style = ttk.Style()
         style.theme_use("default")
-        style.configure("Secure.Treeview", background="#121A29", foreground=TEXT,
-                        fieldbackground="#121A29", rowheight=36, borderwidth=0,
+        style.configure("Secure.Treeview", background=CARD, foreground=TEXT,
+                        fieldbackground=CARD, rowheight=38, borderwidth=0,
                         font=("Segoe UI", 10))
-        style.configure("Secure.Treeview.Heading", background="#1E293B", foreground=MUTED,
+        style.configure("Secure.Treeview.Heading", background="#EEF2F7", foreground="#475569",
                         relief="flat", font=("Segoe UI", 10, "bold"))
         style.map("Secure.Treeview", background=[("selected", PRIMARY)], foreground=[("selected", "white")])
 
     def _build(self):
         shell = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
         shell.pack(fill="both", expand=True)
-        sidebar = ctk.CTkFrame(shell, width=250, fg_color="#101827", corner_radius=0)
+        sidebar = ctk.CTkFrame(shell, width=270, fg_color=SIDEBAR, corner_radius=0)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
         brand = ctk.CTkFrame(sidebar, fg_color="transparent")
         brand.pack(fill="x", padx=24, pady=(34, 38))
-        ctk.CTkLabel(brand, text="⚡", text_color=TEXT,
+        ctk.CTkLabel(brand, text="⚡", text_color="white",
                      font=ctk.CTkFont(size=28, weight="bold")).pack(side="left", padx=(0, 12))
         title_box = ctk.CTkFrame(brand, fg_color="transparent")
         title_box.pack(side="left")
-        ctk.CTkLabel(title_box, text="ASSISTENTE PRO", text_color=TEXT,
+        ctk.CTkLabel(title_box, text="ASSISTENTE PRO", text_color="white",
                      font=ctk.CTkFont(size=17, weight="bold")).pack(anchor="w")
         ctk.CTkLabel(title_box, text="ADMIN CONSOLE · SUPABASE", text_color="#38BDF8",
                      font=ctk.CTkFont(size=10, weight="bold")).pack(anchor="w", pady=(3, 0))
 
         self.nav_buttons = {}
-        for key, label in [
-            ("clients", "▦  Clientes & Máquinas"),
-            ("system", "🚀  Distribuição & Preços"),
-            ("keys", "🔑  Gerador de Licenças"),
-            ("audit", "◉  Diagnósticos & Logs"),
-        ]:
+        ctk.CTkLabel(sidebar, text="CLIENTES E LICENÇAS", text_color="#7FA6D8",
+                     font=ctk.CTkFont(size=10, weight="bold")).pack(anchor="w", padx=25, pady=(0, 7))
+        navigation = [
+            ("clients", "▦  Por computador"),
+            ("enterprises", "🏢  Por empresa"),
+            (None, "SISTEMA E SUPORTE"),
+            ("system", "🚀  Versões, preços e avisos"),
+            ("keys", "🔑  Chaves temporárias"),
+            ("audit", "◉  Auditoria e diagnósticos"),
+        ]
+        for key, label in navigation:
+            if key is None:
+                ctk.CTkLabel(sidebar, text=label, text_color="#7FA6D8",
+                             font=ctk.CTkFont(size=10, weight="bold")).pack(
+                    anchor="w", padx=25, pady=(24, 7))
+                continue
             button = ctk.CTkButton(
-                sidebar, text=label, anchor="w", height=52, corner_radius=9,
-                fg_color="transparent", hover_color="#1E293B", text_color=MUTED,
-                font=ctk.CTkFont(size=13, weight="bold"),
+                sidebar, text=label, anchor="w", height=46, corner_radius=9,
+                fg_color="transparent", hover_color=SIDEBAR_HOVER, text_color="#CBD5E1",
+                font=ctk.CTkFont(size=12, weight="bold"),
                 command=lambda page=key: self._show_page(page),
             )
             button.pack(fill="x", padx=14, pady=5)
             self.nav_buttons[key] = button
-        ctk.CTkLabel(sidebar, text="🔐 MFA ativo\nOperações registradas em auditoria",
-                     text_color="#64748B", justify="left",
+        ctk.CTkLabel(sidebar, text="🔐  MFA administrativo ativo\n✓  Alterações registradas em auditoria",
+                     text_color="#8FA9CA", justify="left",
                      font=ctk.CTkFont(size=11)).pack(side="bottom", anchor="w", padx=26, pady=25)
 
         main = ctk.CTkFrame(shell, fg_color=BG, corner_radius=0)
         main.pack(side="left", fill="both", expand=True)
-        header = ctk.CTkFrame(main, fg_color="transparent")
-        header.pack(fill="x", padx=30, pady=(22, 12))
+        header = ctk.CTkFrame(main, fg_color=CARD, border_width=1,
+                              border_color=BORDER, corner_radius=14)
+        header.pack(fill="x", padx=30, pady=(22, 14))
         header_titles = ctk.CTkFrame(header, fg_color="transparent")
-        header_titles.pack(side="left")
-        self.page_title = ctk.CTkLabel(header_titles, text="Clientes & Máquinas", text_color=TEXT,
-                                      font=ctk.CTkFont(size=24, weight="bold"))
+        header_titles.pack(side="left", padx=22, pady=16)
+        self.page_eyebrow = ctk.CTkLabel(
+            header_titles, text="ADMINISTRAÇÃO SEGURA", text_color=PRIMARY,
+            font=ctk.CTkFont(size=10, weight="bold"),
+        )
+        self.page_eyebrow.pack(anchor="w")
+        self.page_title = ctk.CTkLabel(header_titles, text="Gestão por computador", text_color=TEXT,
+                                      font=ctk.CTkFont(size=25, weight="bold"))
         self.page_title.pack(anchor="w")
         self.page_subtitle = ctk.CTkLabel(
             header_titles, text="Visão consolidada das instalações e licenças",
@@ -184,8 +211,8 @@ class SupabaseAdminApp(ctk.CTk):
         )
         self.page_subtitle.pack(anchor="w", pady=(1, 0))
         self.status = ctk.CTkLabel(header, text="Conectando ao Supabase...", text_color=WARNING,
-                                   fg_color=CARD, corner_radius=14, height=30, padx=13)
-        self.status.pack(side="right", padx=12)
+                                   fg_color="#FFF7ED", corner_radius=14, height=30, padx=13)
+        self.status.pack(side="right", padx=(8, 22))
         ctk.CTkButton(header, text="↻  Atualizar dados", width=150, height=38,
                       command=self.refresh_all, fg_color=PRIMARY).pack(side="right")
 
@@ -207,13 +234,13 @@ class SupabaseAdminApp(ctk.CTk):
             self.kpi_cards.append(card)
             top = ctk.CTkFrame(card, fg_color="transparent")
             top.pack(fill="x", padx=18, pady=(15, 0))
-            ctk.CTkLabel(top, text=title, text_color="#7890B8",
+            ctk.CTkLabel(top, text=title, text_color="#64748B",
                          font=ctk.CTkFont(size=10, weight="bold")).pack(side="left")
             ctk.CTkLabel(top, text=icon, text_color=TEXT).pack(side="right")
             value = ctk.CTkLabel(card, text="—", text_color=TEXT,
                                  font=ctk.CTkFont(size=24, weight="bold"))
             value.pack(anchor="w", padx=18, pady=(8, 1))
-            sub = ctk.CTkLabel(card, text="Sincronizando...", text_color="#8EA6CC",
+            sub = ctk.CTkLabel(card, text="Sincronizando...", text_color="#64748B",
                                font=ctk.CTkFont(size=11))
             sub.pack(anchor="w", padx=18, pady=(0, 15))
             self.kpi_labels[key] = (value, sub)
@@ -223,14 +250,16 @@ class SupabaseAdminApp(ctk.CTk):
         self.content.grid_rowconfigure(0, weight=1)
         self.content.grid_columnconfigure(0, weight=1)
         self.tab_clients = ctk.CTkFrame(self.content, fg_color="transparent")
+        self.tab_enterprises = ctk.CTkFrame(self.content, fg_color="transparent")
         self.tab_keys = ctk.CTkFrame(self.content, fg_color="transparent")
         self.tab_system = ctk.CTkFrame(self.content, fg_color="transparent")
         self.tab_audit = ctk.CTkFrame(self.content, fg_color="transparent")
-        self.pages = {"clients": self.tab_clients, "keys": self.tab_keys,
+        self.pages = {"clients": self.tab_clients, "enterprises": self.tab_enterprises, "keys": self.tab_keys,
                       "system": self.tab_system, "audit": self.tab_audit}
         for page in self.pages.values():
             page.grid(row=0, column=0, sticky="nsew")
         self._build_clients()
+        self._build_enterprises()
         self._build_keys()
         self._build_system()
         self._build_audit()
@@ -251,28 +280,66 @@ class SupabaseAdminApp(ctk.CTk):
 
     def _show_page(self, key):
         titles = {
-            "clients": ("Clientes & Máquinas", "Visão consolidada das instalações e licenças"),
-            "system": ("Distribuição & Preços", "Controle de versões, atualizações e comunicação"),
-            "keys": ("Gerador de Licenças", "Criação e rastreabilidade de chaves temporárias"),
-            "audit": ("Diagnósticos & Logs", "Investigação remota com dados protegidos"),
+            "clients": ("AJUSTES INDIVIDUAIS", "Gestão por computador", "Configure licença, limites de envio, relatórios e acesso de uma máquina específica."),
+            "enterprises": ("CONTA CONSOLIDADA", "Gestão por empresa", "Administre assinatura, cobrança, unidades, usuários e computadores vinculados."),
+            "system": ("CONFIGURAÇÃO GLOBAL", "Versões, preços e avisos", "Publique atualizações e defina valores ou comunicados para todos os clientes."),
+            "keys": ("BENEFÍCIOS TEMPORÁRIOS", "Chaves temporárias", "Conceda dias ou mensagens com códigos rastreáveis de uso único."),
+            "audit": ("SEGURANÇA E SUPORTE", "Auditoria e diagnósticos", "Investigue eventos técnicos sem expor dados pessoais dos clientes."),
         }
         self.pages[key].tkraise()
-        self.page_title.configure(text=titles[key][0])
-        self.page_subtitle.configure(text=titles[key][1])
+        self.page_eyebrow.configure(text=titles[key][0])
+        self.page_title.configure(text=titles[key][1])
+        self.page_subtitle.configure(text=titles[key][2])
+        if key in {"clients", "enterprises"}:
+            if not self.kpi_frame.winfo_manager():
+                self.kpi_frame.pack(fill="x", padx=30, pady=(0, 14), before=self.content)
+        else:
+            self.kpi_frame.pack_forget()
         for page_key, button in self.nav_buttons.items():
             selected = page_key == key
             button.configure(fg_color=PRIMARY if selected else "transparent",
-                             text_color="white" if selected else MUTED)
+                             text_color="white" if selected else "#CBD5E1")
 
     def _toolbar_button(self, parent, text, command, color=PRIMARY):
         return ctk.CTkButton(parent, text=text, command=command, height=36,
                              fg_color=color, font=ctk.CTkFont(size=12, weight="bold"))
 
+    def _scope_card(self, parent, title, description, action, command):
+        card = ctk.CTkFrame(
+            parent, fg_color="#EFF6FF", border_width=1,
+            border_color="#BFDBFE", corner_radius=12,
+        )
+        text_box = ctk.CTkFrame(card, fg_color="transparent")
+        text_box.pack(side="left", fill="x", expand=True, padx=18, pady=12)
+        ctk.CTkLabel(
+            text_box, text=title, text_color="#1E3A8A",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            text_box, text=description, text_color="#475569",
+            font=ctk.CTkFont(size=11),
+        ).pack(anchor="w", pady=(2, 0))
+        ctk.CTkButton(
+            card, text=action, command=command, width=175, height=34,
+            fg_color="white", hover_color="#DBEAFE", text_color=PRIMARY,
+            border_width=1, border_color="#93C5FD",
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).pack(side="right", padx=14, pady=12)
+        return card
+
     def _build_clients(self):
         self.tab_clients.grid_columnconfigure(0, weight=1)
-        self.tab_clients.grid_rowconfigure(1, weight=1)
+        self.tab_clients.grid_rowconfigure(2, weight=1)
+        scope = self._scope_card(
+            self.tab_clients,
+            "Cada linha representa um computador",
+            "Alterações feitas aqui afetam somente a máquina selecionada.",
+            "Ver empresa e cobrança →",
+            lambda: self._show_page("enterprises"),
+        )
+        scope.grid(row=0, column=0, sticky="ew", pady=(2, 6))
         toolbar = ctk.CTkFrame(self.tab_clients, fg_color="transparent")
-        toolbar.grid(row=0, column=0, sticky="ew", pady=(10, 12))
+        toolbar.grid(row=1, column=0, sticky="ew", pady=(6, 12))
         toolbar.grid_columnconfigure(1, weight=1)
         self.client_filter = ctk.CTkComboBox(
             toolbar, width=130, height=36,
@@ -285,15 +352,15 @@ class SupabaseAdminApp(ctk.CTk):
                                           height=36)
         self.client_search.grid(row=0, column=1, sticky="ew", padx=(0, 8))
         self.client_search.bind("<KeyRelease>", lambda _event: self._render_installations())
-        edit_button = self._toolbar_button(toolbar, "Editar licença", self.edit_license)
-        edit_button.configure(width=115)
+        edit_button = self._toolbar_button(toolbar, "Licença e envios", self.edit_license)
+        edit_button.configure(width=135)
         edit_button.grid(row=0, column=2, padx=4)
         self.client_actions_button = self._toolbar_button(toolbar, "Mais ações  ⋮", self._open_actions_button, "#334155")
         self.client_actions_button.configure(width=125)
         self.client_actions_button.grid(row=0, column=3, padx=(4, 0))
 
         frame = ctk.CTkFrame(self.tab_clients, fg_color=CARD, border_width=1, border_color=BORDER)
-        frame.grid(row=1, column=0, sticky="nsew")
+        frame.grid(row=2, column=0, sticky="nsew")
         frame.grid_rowconfigure(0, weight=1)
         frame.grid_columnconfigure(0, weight=1)
         columns = ("status", "hardware", "company", "manager", "phone", "days", "license", "price", "version")
@@ -317,13 +384,13 @@ class SupabaseAdminApp(ctk.CTk):
         self.client_tree.configure(yscrollcommand=scroll.set, xscrollcommand=horizontal.set)
         self.client_tree.bind("<Double-1>", lambda _event: self.edit_license())
         self.client_tree.bind("<Button-3>", self._open_client_menu)
-        self.client_tree.tag_configure("blocked", foreground="#FCA5A5")
-        self.client_tree.tag_configure("expired", foreground="#FBBF24")
-        self.client_tree.tag_configure("online", foreground="#6EE7B7")
+        self.client_tree.tag_configure("blocked", foreground="#B91C1C")
+        self.client_tree.tag_configure("expired", foreground="#B45309")
+        self.client_tree.tag_configure("online", foreground="#047857")
 
-        self.client_menu = tk.Menu(self, tearoff=0, bg="#1E293B", fg="white",
-                                   activebackground=PRIMARY, activeforeground="white")
-        self.client_menu.add_command(label="✎  Editar licença completa", command=self.edit_license)
+        self.client_menu = tk.Menu(self, tearoff=0, bg="white", fg=TEXT,
+                                   activebackground="#DBEAFE", activeforeground="#1D4ED8")
+        self.client_menu.add_command(label="✎  Editar licença e limites", command=self.edit_license)
         self.client_menu.add_command(label="＄  Definir mensalidade individual", command=self.set_monthly_price)
         self.client_menu.add_command(label="🔗  Configurar links dos relatórios", command=self.configure_report_links)
         self.client_menu.add_command(label="📣  Configurar aviso individual", command=self.set_individual_notice)
@@ -336,12 +403,126 @@ class SupabaseAdminApp(ctk.CTk):
         self.client_menu.add_command(label="🗑  Excluir cadastro definitivamente", command=self.delete_installation)
 
         footer = ctk.CTkFrame(self.tab_clients, fg_color="transparent")
-        footer.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        footer.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         self.client_count = ctk.CTkLabel(footer, text="0 registros", text_color=MUTED,
                                          font=ctk.CTkFont(size=11, weight="bold"))
         self.client_count.pack(side="left")
         ctk.CTkLabel(footer, text="Duplo clique: editar  ·  Botão direito: menu completo",
                      text_color="#64748B", font=ctk.CTkFont(size=11)).pack(side="right")
+
+    def _build_enterprises(self):
+        self.tab_enterprises.grid_columnconfigure(0, weight=1)
+        self.tab_enterprises.grid_rowconfigure(2, weight=1)
+        scope = self._scope_card(
+            self.tab_enterprises,
+            "Cada assinatura reúne uma empresa inteira",
+            "Preços e vigência afetam a conta; as máquinas aparecem para mostrar sua composição.",
+            "Ajustar esta máquina →",
+            self.open_selected_enterprise_device,
+        )
+        scope.grid(row=0, column=0, sticky="ew", pady=(2, 6))
+        toolbar = ctk.CTkFrame(self.tab_enterprises, fg_color="transparent")
+        toolbar.grid(row=1, column=0, sticky="ew", pady=(6, 12))
+        toolbar.grid_columnconfigure(0, weight=1)
+        self.enterprise_search = ctk.CTkEntry(
+            toolbar, placeholder_text="Buscar conta, CPF, CNPJ ou computador...", height=36,
+        )
+        self.enterprise_search.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.enterprise_search.bind("<KeyRelease>", lambda _event: self._render_enterprises())
+        self._toolbar_button(toolbar, "Editar assinatura da empresa", self.edit_enterprise_subscription).grid(
+            row=0, column=1, padx=4,
+        )
+        self._toolbar_button(
+            toolbar, "Bloquear / liberar esta máquina", self.toggle_enterprise_device, "#334155",
+        ).grid(row=0, column=2, padx=(4, 0))
+        self.transfer_button = self._toolbar_button(toolbar, "Tornar Principal", self.transfer_principal, "#8B5CF6")
+        self.transfer_button.grid(row=0, column=3, padx=(4, 0))
+
+        frame = ctk.CTkFrame(
+            self.tab_enterprises, fg_color=CARD, border_width=1, border_color=BORDER,
+        )
+        frame.grid(row=2, column=0, sticky="nsew")
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+        columns = ("company", "cnpj", "hardware", "device_class", "access", "subscription",
+                   "expiry", "monthly", "members")
+        self.enterprise_tree = ttk.Treeview(
+            frame, columns=columns, show="tree headings", style="Secure.Treeview",
+        )
+        headings = {
+            "company": "EMPRESA", "cnpj": "UNIDADE / CPF OU CNPJ", "hardware": "COMPUTADOR",
+            "device_class": "TIPO", "access": "ACESSO", "subscription": "ASSINATURA",
+            "expiry": "VIGÊNCIA", "monthly": "TOTAL", "members": "USUÁRIOS",
+        }
+        widths = {"company": 175, "cnpj": 255, "hardware": 155, "device_class": 85,
+                  "access": 85, "subscription": 95, "expiry": 105, "monthly": 90, "members": 78}
+        for column in columns:
+            self.enterprise_tree.heading(column, text=headings[column])
+            self.enterprise_tree.column(column, width=widths[column], anchor="w" if column in {"company", "cnpj"} else "center")
+        self.enterprise_tree.grid(row=0, column=0, sticky="nsew", padx=(10, 0), pady=10)
+        scroll = ctk.CTkScrollbar(frame, command=self.enterprise_tree.yview)
+        scroll.grid(row=0, column=1, sticky="ns", padx=(0, 10), pady=10)
+        horizontal = ctk.CTkScrollbar(frame, orientation="horizontal", command=self.enterprise_tree.xview)
+        horizontal.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        self.enterprise_tree.configure(yscrollcommand=scroll.set, xscrollcommand=horizontal.set)
+        self.enterprise_tree.bind("<Double-1>", lambda _event: self.edit_enterprise_subscription())
+        self.enterprise_tree.tag_configure("blocked", foreground="#B91C1C")
+        self.enterprise_tree.tag_configure("trial", foreground="#B45309")
+        self.enterprise_tree.tag_configure("active", foreground="#047857")
+        self.enterprise_count = ctk.CTkLabel(
+            self.tab_enterprises, text="0 empresas", text_color=MUTED,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        )
+        self.enterprise_count.grid(row=3, column=0, sticky="w", pady=(8, 0))
+        self._toolbar_button(self.tab_enterprises, "Pagamentos que precisam de conferência",
+                             self.show_billing_reconciliation, WARNING).grid(row=4, column=0, sticky="w", pady=8)
+
+    def show_billing_reconciliation(self):
+        def loaded(response):
+            cases = response.get("cases") or []
+            if not cases:
+                messagebox.showinfo("Pagamentos", "Nenhum pagamento aguardando conferência.", parent=self)
+                return
+            dialog = ctk.CTkToplevel(self)
+            dialog.title("Pagamentos em conferência")
+            dialog.geometry("800x520")
+            dialog.transient(self)
+            ctk.CTkLabel(dialog, text="Confira o recebimento no Mercado Pago antes de alterar a assinatura.",
+                         wraplength=730).pack(padx=20, pady=15)
+            box = ctk.CTkTextbox(dialog, wrap="word")
+            box.pack(fill="both", expand=True, padx=20, pady=10)
+            reasons = {
+                "SEAT_SNAPSHOT_MISMATCH": "Computadores alterados depois da emissão",
+                "AMOUNT_MISMATCH": "Valor recebido diferente da fatura",
+                "INVOICE_PRICE_CHANGED": "Preços alterados depois da emissão",
+                "ATTEMPT_NOT_PAYABLE": "Pagamento de cobrança substituída ou já encerrada",
+                "LEGACY_PAYMENT_SNAPSHOT_REQUIRED": "Cobrança antiga sem composição verificável",
+                "PAYMENT_REFUNDED": "Reembolso informado pelo provedor",
+                "SUBSCRIPTION_NOT_BILLABLE": "Assinatura suspensa ou cancelada",
+                "STALE_INVOICE_PERIOD": "Pagamento de período já coberto",
+            }
+            for case in cases:
+                company = _relation(case.get("companies")).get("name") or case.get("company_id")
+                reason = reasons.get(case.get("reason"), "Divergência a conferir")
+                box.insert("end", f"{company}\nValor recebido: R$ {case.get('received_amount')}\n"
+                           f"Motivo: {reason}\nReferência: {case.get('attempt_id')}\n"
+                           f"Registrado em: {_display_date(case.get('created_at'))}\n\n")
+            box.configure(state="disabled")
+            selected = ctk.CTkComboBox(dialog, values=[str(case["attempt_id"]) for case in cases], width=380)
+            selected.pack(pady=4)
+            def verify_refund():
+                if not messagebox.askyesno("Conferir reembolso",
+                    "Consultar o Mercado Pago para confirmar o reembolso desta referência? "
+                    "Isso não solicita um reembolso. Se o período atual foi reembolsado, o acesso será bloqueado.", parent=dialog):
+                    return
+                attempt_id = selected.get()
+                self._run(lambda: self._request("resolve_billing_refund",attempt_id=attempt_id),
+                    lambda _response: (dialog.destroy(), self.show_billing_reconciliation()),
+                    "Conferindo reembolso no provedor...")
+            ctk.CTkButton(dialog,text="Verificar reembolso já realizado",command=verify_refund).pack(pady=4)
+            ctk.CTkButton(dialog, text="Fechar", command=dialog.destroy).pack(pady=12)
+        self._run(lambda: self._request("list_billing_reconciliation"), loaded,
+                  "Consultando pagamentos em conferência...")
 
     def _build_keys(self):
         self.tab_keys.grid_columnconfigure(1, weight=1)
@@ -504,6 +685,7 @@ class SupabaseAdminApp(ctk.CTk):
         def operation():
             return {
                 "installations": self._request("list_installations").get("installations", []),
+                "enterprises": self._request("list_enterprises").get("enterprises", []),
                 "keys": self._request("list_keys").get("keys", []),
                 "system": self._request("get_system_config").get("system", {}),
             }
@@ -511,9 +693,11 @@ class SupabaseAdminApp(ctk.CTk):
 
     def _accept_refresh(self, result):
         self.installations = {str(item.get("hardware_id")): item for item in result["installations"]}
+        self.enterprises = {str(item.get("id")): item for item in result["enterprises"]}
         self.keys = {str(item.get("id")): item for item in result["keys"]}
         self.system = result["system"]
         self._render_installations()
+        self._render_enterprises()
         self._render_keys()
         self._render_system()
         self._render_kpis()
@@ -522,6 +706,247 @@ class SupabaseAdminApp(ctk.CTk):
         self.key_company.configure(values=companies or ["Sem concessionárias"])
         if companies and self.key_company.get() not in companies:
             self.key_company.set(companies[0])
+
+    def _render_enterprises(self):
+        for row in self.enterprise_tree.get_children():
+            self.enterprise_tree.delete(row)
+        search = self.enterprise_search.get().strip().casefold()
+        company_count = 0
+        row_count = 0
+        for company_id, company in self.enterprises.items():
+            subscription = _relation(company.get("company_subscriptions"))
+            units = {str(unit.get("id")): unit for unit in (company.get("business_units") or [])}
+            installations = list(company.get("installations") or [])
+            searchable = " ".join([
+                str(company.get("name") or ""),
+                *(str(unit.get("cnpj") or "") for unit in units.values()),
+                *(str(item.get("hardware_id") or "") for item in installations),
+            ]).casefold()
+            if search and search not in searchable:
+                continue
+            company_count += 1
+            total = enterprise_monthly_total(subscription, installations)
+            counts = company.get("member_counts") or {}
+            members = sum(int(counts.get(role) or 0) for role in ("owner", "admin", "operator"))
+            expiry = subscription.get("current_period_end") or subscription.get("trial_expires_at")
+            status = str(subscription.get("status") or "—")
+            subscription_labels = {
+                "trial": "EM TESTE", "active": "ATIVA", "past_due": "PENDENTE",
+                "suspended": "SUSPENSA", "cancelled": "CANCELADA",
+            }
+            access_labels = {
+                "active": "ATIVO", "blocked": "BLOQUEADO", "pending": "PENDENTE",
+                "revoked": "REVOGADO",
+            }
+            comp_node = self.enterprise_tree.insert("", "end", iid=f"comp_{company_id}", text=company.get("name") or "Sem nome", values=(
+                company.get("name") or "Sem nome", "EMPRESA", "", "", "",
+                subscription_labels.get(status, status.upper()), _display_date(expiry)[:10],
+                f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), members,
+            ), open=True, tags=("company",))
+
+            rows = installations
+            if not rows:
+                self.enterprise_tree.insert(comp_node, "end", iid=f"inst_none_{company_id}", text="  💻", values=(
+                    "", "Sem unidade", "Sem computador", "—", "—", "—", "—", "", ""
+                ))
+            
+            for item in rows:
+                unit = units.get(str(item.get("business_unit_id") or ""), {})
+                cnpj = str(unit.get("cnpj") or "")
+                cnpj_display = (f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
+                                if len(cnpj) == 14 else (f"{cnpj[:3]}.{cnpj[3:6]}.{cnpj[6:9]}-{cnpj[9:]}" if len(cnpj) == 11 else "Documento pendente"))
+                unit_text = f"{unit.get('display_name') or 'Sem unidade'} · {cnpj_display}"
+                installation_id = str(item.get("id") or "")
+                iid = f"inst_{installation_id}"
+                access = str(item.get("status") or item.get("billing_status") or "—")
+                tag = "blocked" if access in {"blocked", "revoked"} or status in {"past_due", "suspended", "cancelled"} else "trial" if status == "trial" else "active"
+                
+                self.enterprise_tree.insert(comp_node, "end", iid=iid, text="  💻", values=(
+                    "", unit_text, item.get("hardware_id") or "—",
+                    "Principal" if item.get("device_class") == "principal" else "Adicional" if item.get("device_class") == "additional" else "—",
+                    access_labels.get(access, access.upper()),
+                    "", "", "", ""
+                ), tags=(tag,))
+                row_count += 1
+        company_word = "empresa" if company_count == 1 else "empresas"
+        computer_word = "computador/linha" if row_count == 1 else "computadores/linhas"
+        self.enterprise_count.configure(
+            text=f"{company_count} {company_word} · {row_count} {computer_word}",
+        )
+
+    def _selected_enterprise(self):
+        selected = self.enterprise_tree.selection()
+        if not selected:
+            messagebox.showwarning("Seleção necessária", "Selecione uma empresa na tabela.", parent=self)
+            return None, None
+        selected_id = str(selected[0])
+        if selected_id.startswith("comp_"):
+            return self.enterprises.get(selected_id.split("_", 1)[1]), None
+        elif selected_id.startswith("inst_none_"):
+            return self.enterprises.get(selected_id.split("inst_none_", 1)[1]), None
+        elif selected_id.startswith("inst_"):
+            inst_id = selected_id.split("_", 1)[1]
+            for company in self.enterprises.values():
+                for installation in company.get("installations") or []:
+                    if str(installation.get("id")) == inst_id:
+                        return company, installation
+        messagebox.showwarning("Dados desatualizados", "Atualize os dados e tente novamente.", parent=self)
+        return None, None
+
+    def transfer_principal(self):
+        company, installation = self._selected_enterprise()
+        if not company or not installation:
+            messagebox.showinfo("Computador necessário", "Selecione a linha de um computador vinculado.", parent=self)
+            return
+        if not installation.get("id"):
+            messagebox.showinfo("Computador necessário", "Selecione a linha de um computador vinculado.", parent=self)
+            return
+        if str(installation.get("device_class")) == "principal" or str(installation.get("role")) == "principal":
+            messagebox.showinfo("Já é principal", "Este computador já é o principal da empresa.", parent=self)
+            return
+            
+        if not messagebox.askyesno(
+            "Confirmar transferência",
+            f"Deseja tornar o computador {installation.get('hardware_id')} o PRINCIPAL da empresa {company.get('name')}?\n\nO computador principal atual será rebaixado para operador.", parent=self,
+        ):
+            return
+            
+        self._run(lambda: self._request(
+            "transfer_principal", company_id=str(company.get("id")), installation_id=str(installation.get("id")),
+        ), lambda _result: self.refresh_all(), "Transferindo licença principal...")
+
+    def open_selected_enterprise_device(self):
+        """Abre os ajustes individuais mantendo o computador atual selecionado."""
+        _company, installation = self._selected_enterprise()
+        if not installation:
+            messagebox.showinfo(
+                "Computador necessário",
+                "Selecione uma linha que possua um computador vinculado.",
+                parent=self,
+            )
+            return
+        hardware = str(installation.get("hardware_id") or "")
+        if not hardware or hardware not in self.installations:
+            messagebox.showwarning(
+                "Computador indisponível",
+                "Atualize os dados e tente novamente.",
+                parent=self,
+            )
+            return
+
+        self.client_filter.set("Todos")
+        self.client_search.delete(0, "end")
+        self.client_search.insert(0, hardware)
+        self._render_installations()
+        self._show_page("clients")
+        if self.client_tree.exists(hardware):
+            self.client_tree.selection_set(hardware)
+            self.client_tree.focus(hardware)
+            self.client_tree.see(hardware)
+
+    def edit_enterprise_subscription(self):
+        company, _installation = self._selected_enterprise()
+        if not company:
+            return
+        subscription = _relation(company.get("company_subscriptions"))
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(f"Assinatura — {company.get('name') or 'Empresa'}")
+        dialog.geometry("560x520")
+        dialog.minsize(520, 480)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.configure(fg_color=BG)
+        dialog.after(20, lambda: center_window(dialog, 560, 520, self))
+        ctk.CTkLabel(dialog, text=company.get("name") or "Empresa", text_color=TEXT,
+                     font=ctk.CTkFont(size=22, weight="bold")).pack(anchor="w", padx=28, pady=(24, 5))
+        ctk.CTkLabel(dialog, text="A alteração será aplicada a todos os computadores vinculados.",
+                     text_color=MUTED).pack(anchor="w", padx=28, pady=(0, 16))
+        form = ctk.CTkFrame(dialog, fg_color="transparent")
+        form.pack(fill="both", expand=True, padx=28)
+        ctk.CTkLabel(form, text="Status da assinatura", text_color=MUTED).pack(anchor="w")
+        status_labels = {
+            "Em teste": "trial", "Ativa": "active", "Pagamento pendente": "past_due",
+            "Suspensa": "suspended", "Cancelada": "cancelled",
+        }
+        current_status = str(subscription.get("status") or "trial")
+        current_label = next((label for label, value in status_labels.items() if value == current_status), "Em teste")
+        status_entry = ctk.CTkComboBox(form, values=list(status_labels), height=40)
+        status_entry.set(current_label)
+        status_entry.pack(fill="x", pady=(4, 12))
+        fields = []
+        for label, value in [
+            ("Mensalidade principal (R$)", 300 if subscription.get("base_price") is None else subscription["base_price"]),
+            ("Cada computador adicional (R$)", 50 if subscription.get("additional_seat_price") is None else subscription["additional_seat_price"]),
+        ]:
+            ctk.CTkLabel(form, text=label, text_color=MUTED).pack(anchor="w")
+            entry = ctk.CTkEntry(form, height=40)
+            entry.insert(0, str(value))
+            entry.pack(fill="x", pady=(4, 12))
+            fields.append(entry)
+        ctk.CTkLabel(form, text="Válida até (DD/MM/AAAA)", text_color=MUTED).pack(anchor="w")
+        expiry_entry = ctk.CTkEntry(form, height=40)
+        expiry_value = subscription.get("current_period_end") or subscription.get("trial_expires_at")
+        expiry_entry.insert(0, _display_date(expiry_value)[:10] if expiry_value else "")
+        expiry_entry.pack(fill="x", pady=(4, 12))
+        feedback = ctk.CTkLabel(form, text="", text_color=DANGER)
+        feedback.pack(anchor="w")
+        footer = ctk.CTkFrame(dialog, fg_color=CARD, corner_radius=0)
+        footer.pack(fill="x", side="bottom")
+        ctk.CTkButton(footer, text="Cancelar", fg_color="#334155", command=dialog.destroy).pack(
+            side="right", padx=(8, 20), pady=15,
+        )
+
+        def save():
+            try:
+                base_price = _parse_monthly_price(fields[0].get())
+                additional_price = _parse_monthly_price(fields[1].get())
+                current_period_end = _iso_subscription_end(expiry_entry.get())
+            except ValueError:
+                feedback.configure(text="Revise os valores e informe a data no formato DD/MM/AAAA.")
+                return
+            save_button.configure(state="disabled", text="Salvando...")
+
+            def accepted(_result):
+                if dialog.winfo_exists():
+                    dialog.destroy()
+                messagebox.showinfo("Assinatura atualizada", "Os dados foram confirmados pelo Supabase.", parent=self)
+                self.refresh_all()
+
+            def failed(error):
+                if dialog.winfo_exists():
+                    save_button.configure(state="normal", text="Salvar alterações")
+                    feedback.configure(text=friendly_auth_error(error))
+                self._show_error(error)
+
+            self._run(lambda: self._request(
+                "update_enterprise_subscription", company_id=str(company.get("id")),
+                status=status_labels[status_entry.get()], base_price=base_price,
+                additional_seat_price=additional_price, current_period_end=current_period_end,
+            ), accepted, "Atualizando assinatura empresarial...", on_error=failed)
+
+        save_button = ctk.CTkButton(footer, text="Salvar alterações", fg_color=SUCCESS, command=save)
+        save_button.pack(side="right", padx=(20, 0), pady=15)
+
+    def toggle_enterprise_device(self):
+        company, installation = self._selected_enterprise()
+        if not company or not installation:
+            messagebox.showinfo("Computador necessário", "Selecione a linha de um computador vinculado.", parent=self)
+            return
+        if not installation.get("id"):
+            messagebox.showinfo("Computador necessário", "Selecione a linha de um computador vinculado.", parent=self)
+            return
+        current = str(installation.get("status") or "")
+        target = "active" if current == "blocked" else "blocked"
+        action = "liberar" if target == "active" else "bloquear"
+        if not messagebox.askyesno(
+            "Confirmar alteração",
+            f"Deseja {action} o computador {installation.get('hardware_id')}?\n\n"
+            "A assinatura da empresa e os demais computadores não serão alterados.", parent=self,
+        ):
+            return
+        self._run(lambda: self._request(
+            "set_enterprise_device_status", installation_id=str(installation.get("id")), status=target,
+        ), lambda _result: self.refresh_all(), f"Alterando acesso do computador...")
 
     @staticmethod
     def _is_online(item):
@@ -692,6 +1117,7 @@ class SupabaseAdminApp(ctk.CTk):
         modal.configure(fg_color=BG)
         modal.transient(self)
         modal.grab_set()
+        modal.after(20, lambda: center_window(modal, 680, 490, self))
         modal.grid_columnconfigure(0, weight=1)
         modal.grid_rowconfigure(1, weight=1)
 
@@ -829,21 +1255,29 @@ class SupabaseAdminApp(ctk.CTk):
             return
         item = self.installations[hardware]
         license_data = _relation(item.get("licenses"))
+        enterprise_managed = any(
+            device.get("hardware_id") == hardware
+            for enterprise in self.enterprises.values()
+            for device in enterprise.get("installations", [])
+        )
         company = _relation(item.get("companies")).get("name") or hardware
         modal = ctk.CTkToplevel(self)
-        modal.title(f"Licença — {company}")
+        modal.title(f"Licença e limites de envio — {company}")
         modal.geometry("650x720")
         modal.minsize(560, 520)
         modal.configure(fg_color=BG)
         modal.transient(self)
         modal.grab_set()
+        modal.after(20, lambda: center_window(modal, 650, 720, self))
         modal.grid_columnconfigure(0, weight=1)
         modal.grid_rowconfigure(1, weight=1)
         entries = {}
         fields = [
             ("expires_at", "Vencimento (DD/MM/AAAA)", _display_date(license_data.get("expires_at"))[:10]),
-            ("extra_messages", "Mensagens extras", str(license_data.get("extra_messages") or 0)),
             ("monthly_price", "Mensalidade (vazio = padrão)", "" if license_data.get("monthly_price") is None else str(license_data.get("monthly_price"))),
+            ("daily_message_limit", "Limite diário de mensagens (vazio = padrão do plano)", "" if license_data.get("daily_message_limit") is None else str(license_data["daily_message_limit"])),
+            ("batch_limit", "Clientes permitidos por disparo", str(license_data.get("batch_limit") or 1)),
+            ("extra_messages", "Mensagens extras disponíveis", str(license_data.get("extra_messages") or 0)),
             ("adjustment_notice", "Aviso individual", str(license_data.get("adjustment_notice") or "")),
         ]
         header = ctk.CTkFrame(modal, fg_color="transparent")
@@ -851,7 +1285,8 @@ class SupabaseAdminApp(ctk.CTk):
         ctk.CTkLabel(header, text=str(company), text_color=TEXT,
                      font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w")
         ctk.CTkLabel(
-            header, text="Ajuste os dados da licença e confirme no botão Salvar alterações.",
+            header, text=("Preço e vigência: altere em Por empresa → Editar assinatura."
+                          if enterprise_managed else "Ajuste a licença, a cobrança e os limites de envio desta máquina."),
             text_color=MUTED, font=ctk.CTkFont(size=11),
         ).pack(anchor="w", pady=(3, 0))
 
@@ -861,11 +1296,35 @@ class SupabaseAdminApp(ctk.CTk):
         form.grid(row=1, column=0, sticky="nsew", padx=28, pady=(0, 12))
         form.grid_columnconfigure(0, weight=1)
         for key, label, value in fields:
+            if key == "expires_at":
+                ctk.CTkLabel(
+                    form, text="LICENÇA E COBRANÇA", text_color=PRIMARY,
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                ).pack(anchor="w", padx=18, pady=(14, 2))
+            elif key == "daily_message_limit":
+                ctk.CTkLabel(
+                    form, text="LIMITES DE ENVIO", text_color=PRIMARY,
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                ).pack(anchor="w", padx=18, pady=(20, 2))
+            elif key == "adjustment_notice":
+                ctk.CTkLabel(
+                    form, text="COMUNICAÇÃO", text_color=PRIMARY,
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                ).pack(anchor="w", padx=18, pady=(20, 2))
             ctk.CTkLabel(form, text=label, text_color=MUTED).pack(anchor="w", padx=18, pady=(10, 3))
             entry = ctk.CTkEntry(form, height=36)
             entry.insert(0, value)
             entry.pack(fill="x", padx=18)
             entries[key] = entry
+            if enterprise_managed and key in ("expires_at", "monthly_price"):
+                entry.configure(state="disabled")
+            if key == "batch_limit":
+                ctk.CTkLabel(
+                    form,
+                    text="Ex.: 5 permite selecionar 5 clientes; o sistema envia um por vez, em sequência.",
+                    text_color="#64748B", font=ctk.CTkFont(size=10),
+                    justify="left", wraplength=540,
+                ).pack(anchor="w", padx=18, pady=(4, 0))
         links = license_data.get("report_links") or {}
         for key, label in [("auditor_tsi", "Relatório auditor TSI"), ("auditor_ssi", "Relatório auditor SSI"),
                            ("fila_tsi", "Fila TSI"), ("fila_ssi", "Fila SSI")]:
@@ -903,8 +1362,16 @@ class SupabaseAdminApp(ctk.CTk):
             if saving["active"]:
                 return
             try:
-                expiry = _iso_end_of_day(entries["expires_at"].get())
+                if not enterprise_managed:
+                    expiry = _iso_end_of_day(entries["expires_at"].get())
+                else:
+                    expiry = None
                 extra = int(entries["extra_messages"].get())
+                daily_text = entries["daily_message_limit"].get().strip()
+                daily_limit = int(daily_text) if daily_text else None
+                batch_limit = int(entries["batch_limit"].get())
+                if (daily_limit is not None and not 1 <= daily_limit <= 1000) or not 1 <= batch_limit <= 1000:
+                    raise ValueError
                 if extra < 0:
                     raise ValueError
                 price_text = entries["monthly_price"].get().strip()
@@ -923,13 +1390,22 @@ class SupabaseAdminApp(ctk.CTk):
             diagnostic_until = ((dt.datetime.now().astimezone() + dt.timedelta(hours=24)).isoformat()
                                 if diagnostic.get() else None)
             payload = dict(hardware_id=hardware, expires_at=expiry, status="active",
+                           daily_message_limit=daily_limit, batch_limit=batch_limit,
                            license_type="subscription", extra_messages=extra, monthly_price=price,
                            adjustment_notice=entries["adjustment_notice"].get().strip(),
                            report_links=report_links, detailed_diagnostics_until=diagnostic_until)
+            if enterprise_managed:
+                for key in ("expires_at", "status", "license_type", "monthly_price"):
+                    payload.pop(key, None)
             saving["active"] = True
             save_button.configure(state="disabled", text="Salvando...")
+            def failed(error):
+                saving["active"] = False
+                if modal.winfo_exists():
+                    save_button.configure(state="normal", text="Salvar alterações")
+                self._show_error(error)
             self._run(lambda: self._request("update_license", **payload),
-                      lambda _result: (modal.destroy(), self.refresh_all()), "Atualizando licença...")
+                      lambda _result: (modal.destroy(), self.refresh_all()), "Atualizando licença...", on_error=failed)
 
         def changed():
             return (any(entries[key].get() != value for key, value in initial_values.items())
@@ -1026,7 +1502,7 @@ class SupabaseAdminApp(ctk.CTk):
                 "Chave já utilizada",
                 "Esta chave já foi utilizada e o benefício foi aplicado.\n\n"
                 "Para corrigir dias, mensagens ou vencimento, selecione a máquina em "
-                "Clientes & Máquinas e use Editar licença.",
+                "Por computador e use Licença e envios.",
                 parent=self,
             )
             return
@@ -1198,6 +1674,7 @@ class SupabaseAdminApp(ctk.CTk):
             parent=self,
         ):
             return
+        self.publish_button.configure(state="disabled", text="Publicando...")
         payload["current_version"] = version
         payload["minimum_version"] = minimum
         payload["installer_sha256"] = checksum
@@ -1207,14 +1684,19 @@ class SupabaseAdminApp(ctk.CTk):
         submitted_price_text = self.system_entries["default_monthly_price"].get()
 
         def accepted(_result):
+            self.publish_button.configure(state="normal", text="✓  VALIDAR E PUBLICAR CONFIGURAÇÕES")
             if self.system_entries["default_monthly_price"].get() == submitted_price_text:
                 self._last_rendered_price_text = submitted_price_text
             messagebox.showinfo("Salvo", "Configuração atualizada no Supabase.", parent=self)
             self.refresh_all()
 
+        def on_publish_error(error):
+            self.publish_button.configure(state="normal", text="✓  VALIDAR E PUBLICAR CONFIGURAÇÕES")
+            self._show_error(error)
+
         self._run(lambda: self._request("update_system_config", **payload),
                   accepted,
-                  "Salvando configuração...")
+                  "Salvando configuração...", on_error=on_publish_error)
 
     @staticmethod
     def _version_tuple(value):

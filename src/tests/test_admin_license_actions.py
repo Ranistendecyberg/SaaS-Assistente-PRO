@@ -26,7 +26,7 @@ class AdminLicenseActionsTests(unittest.TestCase):
 
         app._run.assert_not_called()
         self.assertIn("já foi utilizada", showinfo.call_args.args[1])
-        self.assertIn("Editar licença", showinfo.call_args.args[1])
+        self.assertIn("Licença e envios", showinfo.call_args.args[1])
 
     @patch("supabase_admin_app.messagebox.askyesno", return_value=True)
     def test_new_key_sends_internal_id_to_server(self, _askyesno):

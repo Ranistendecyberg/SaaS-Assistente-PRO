@@ -12,6 +12,16 @@ class DashboardEngine:
         self.config_path = os.path.join(get_base_dir(), "app_data", "config.json")
         self.config = self.load_config()
 
+        # Índices pré-computados para lookup O(1) em lojas e consultores.
+        # Reconstruídos automaticamente quando load_config() detecta mudança.
+        self._lojas_index: dict = {}       # codigo/cnpj -> (nome, meta)
+        self._consultores_index: dict = {} # cpf_clean -> nome
+        self._rebuild_indexes()
+
+    # ------------------------------------------------------------------
+    # Configuração e índices
+    # ------------------------------------------------------------------
+
     def load_config(self):
         if os.path.exists(self.config_path):
             try:
@@ -21,26 +31,52 @@ class DashboardEngine:
                 pass
         return {"lojas": [], "consultores": []}
 
-    def _get_loja_nome_meta(self, codigo):
-        codigo = str(codigo).strip()
+    def _rebuild_indexes(self) -> None:
+        """Pré-computa dicionários de busca a partir da configuração atual.
+
+        Elimina os loops O(n) executados por linha de DataFrame em
+        _get_loja_nome_meta() e _get_consultor_nome().
+        """
+        # Índice de lojas: código e CNPJ apontam para (nome, meta)
+        lojas_index: dict = {}
         for loja in self.config.get("lojas", []):
-            if str(loja.get("cnpj", "")).strip() == codigo or str(loja.get("codigo", "")).strip() == codigo:
-                return loja.get("nome", codigo), float(loja.get("meta_tsi", 0))
+            nome = loja.get("nome", "")
+            meta = float(loja.get("meta_tsi", 0))
+            for field in ("cnpj", "codigo"):
+                key = str(loja.get(field, "")).strip()
+                if key:
+                    lojas_index[key] = (nome, meta)
+        self._lojas_index = lojas_index
+
+        # Índice de consultores: CPF normalizado (sem zeros à esquerda) -> nome
+        consultores_index: dict = {}
+        for cons in self.config.get("consultores", []):
+            nome = cons.get("nome", "")
+            cpf_raw = str(cons.get("cpf", "")).strip()
+            # Registra tanto o CPF bruto quanto o CPF sem zeros à esquerda
+            cpf_clean = re.sub(r'\D', '', cpf_raw).lstrip('0')
+            if cpf_raw:
+                consultores_index[cpf_raw] = nome
+            if cpf_clean and cpf_clean != cpf_raw:
+                consultores_index[cpf_clean] = nome
+        self._consultores_index = consultores_index
+
+    def _get_loja_nome_meta(self, codigo):
+        """Lookup O(1) de nome e meta da loja pelo código ou CNPJ."""
+        codigo = str(codigo).strip()
+        if codigo in self._lojas_index:
+            return self._lojas_index[codigo]
         return codigo, 0.0
 
     def _get_consultor_nome(self, cpf):
+        """Lookup O(1) de nome do consultor pelo CPF."""
         cpf_original = str(cpf).strip()
         cpf_clean = re.sub(r'\D', '', cpf_original).lstrip('0')
-        
-        for cons in self.config.get("consultores", []):
-            c_cpf = str(cons.get("cpf", "")).strip()
-            c_clean = re.sub(r'\D', '', c_cpf).lstrip('0')
-            
-            if cpf_clean and c_clean and cpf_clean == c_clean:
-                return cons.get("nome", cpf_original)
-            if c_cpf == cpf_original:
-                return cons.get("nome", cpf_original)
-                
+
+        if cpf_clean and cpf_clean in self._consultores_index:
+            return self._consultores_index[cpf_clean]
+        if cpf_original in self._consultores_index:
+            return self._consultores_index[cpf_original]
         return cpf_original
 
     @staticmethod
@@ -113,7 +149,10 @@ class DashboardEngine:
         return resultado
 
     def load_data(self):
+        # Recarrega config com reconstrução de índices somente quando o arquivo mudou
         self.config = self.load_config()
+        self._rebuild_indexes()
+
         records = self.db_manager.load_all_records()
         if not records:
             return pd.DataFrame()
@@ -163,7 +202,7 @@ class DashboardEngine:
         elif 'Código concessionária' not in df.columns:
             df['Código concessionária'] = "Desconhecida"
 
-        # Enriquecer com dados da loja configurada
+        # Enriquecer com dados da loja — lookup O(1) via índice pré-computado
         df['Loja_Nome'] = df['Código concessionária'].apply(lambda x: self._get_loja_nome_meta(x)[0])
         df['Loja_Meta'] = df['Código concessionária'].apply(lambda x: self._get_loja_nome_meta(x)[1])
             
@@ -171,13 +210,19 @@ class DashboardEngine:
             
         # Mês de Resposta
         if 'Data de Resposta' in df.columns:
-            import re
             def extract_mes_ano_tsi(date_str):
                 try:
-                    match = re.search(r'(\d{2})/(\d{4})', str(date_str))
+                    texto = str(date_str).strip()
+                    match = re.search(r'\b\d{1,2}/(\d{1,2})/(\d{4})\b', texto)
                     if match:
-                        return f"{match.group(1)}/{match.group(2)}"
-                except:
+                        return f"{int(match.group(1)):02d}/{match.group(2)}"
+                    match_iso = re.search(r'\b(\d{4})-(\d{1,2})-\d{1,2}(?!\d)', texto)
+                    if match_iso:
+                        return f"{int(match_iso.group(2)):02d}/{match_iso.group(1)}"
+                    match_mes = re.search(r'\b(\d{1,2})/(\d{4})\b', texto)
+                    if match_mes:
+                        return f"{int(match_mes.group(1)):02d}/{match_mes.group(2)}"
+                except Exception:
                     pass
                 return "Desconhecido"
             df['Mes'] = df['Data de Resposta'].apply(extract_mes_ano_tsi)

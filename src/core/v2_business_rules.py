@@ -103,7 +103,7 @@ def normalize_cnpj(value: object) -> str:
 
 def is_valid_cnpj(value: object) -> bool:
     digits = normalize_cnpj(value)
-    if len(digits) != 14 or digits == digits[0] * 14:
+    if len(digits) != 14 or not digits.isascii() or digits == digits[0] * 14:
         return False
 
     def verifier(base: str, weights: tuple[int, ...]) -> str:
@@ -114,6 +114,21 @@ def is_valid_cnpj(value: object) -> bool:
     first = verifier(digits[:12], (5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2))
     second = verifier(digits[:12] + first, (6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2))
     return digits[-2:] == first + second
+
+
+def is_valid_cpf(value: object) -> bool:
+    digits = normalize_cnpj(value)
+    if len(digits) != 11 or not digits.isascii() or len(set(digits)) == 1:
+        return False
+    base = digits[:9]
+    for size in (10, 11):
+        remainder = sum(int(digit) * weight for digit, weight in zip(base, range(size, 1, -1))) % 11
+        base += str(0 if remainder < 2 else 11 - remainder)
+    return base == digits
+
+
+def is_valid_document(value: object) -> bool:
+    return is_valid_cpf(value) or is_valid_cnpj(value)
 
 
 def can_manage_company(role: CompanyRole | str) -> bool:

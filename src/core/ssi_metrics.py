@@ -138,6 +138,7 @@ def calculate_percentage(df: pd.DataFrame, metric: str) -> float:
         return float((valid == "sim").sum() / len(valid) * 100) if len(valid) else 0.0
 
     scores = numeric_series(df, column)
+    scores = scores.where(scores.between(0, 10))
     if SSI_METRICS[metric]["missing_zero"]:
         return float((scores.fillna(0) >= 9).sum() / len(df) * 100)
 
@@ -147,6 +148,7 @@ def calculate_percentage(df: pd.DataFrame, metric: str) -> float:
 
 def recommendation_summary(df: pd.DataFrame) -> dict:
     scores = numeric_series(df, raw_column(df, "recommendation")).dropna()
+    scores = scores[scores.between(0, 10)]
     if len(scores) == 0:
         return {"promoters": 0, "neutrals": 0, "detractors": 0, "nps": 0.0, "valid": 0}
     promoters = int((scores >= 9).sum())
@@ -175,4 +177,3 @@ def format_model_year(value) -> str:
     if not math.isnan(number) and 1900 <= number <= 2200:
         return str(int(number))
     return text
-

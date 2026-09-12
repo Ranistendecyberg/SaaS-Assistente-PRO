@@ -2,15 +2,17 @@ import hashlib
 import os
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from src.core.updater import (
     Updater,
     build_silent_installer_command,
     build_update_assistant_command,
+    resolve_installed_app_path,
     validate_installer_file,
 )
-from update_completion_helper import installer_command
+from update_completion_helper import installer_command, launch_updated_app
 
 
 class UpdaterSecurityTests(unittest.TestCase):
@@ -24,6 +26,12 @@ class UpdaterSecurityTests(unittest.TestCase):
         self.assertTrue(updater._versao_maior("1.8.1", "1.8"))
         self.assertFalse(updater._versao_maior("1.8.0", "1.8"))
         self.assertTrue(updater._versao_maior("v2.0.0", "1.99.99"))
+
+    def test_final_version_is_newer_than_beta(self):
+        updater = Updater("2.0.0-beta.1")
+        self.assertTrue(updater._versao_maior("2.0.0", "2.0.0-beta.1"))
+        self.assertTrue(updater._versao_maior("2.0.0-beta.2", "2.0.0-beta.1"))
+        self.assertFalse(updater._versao_maior("2.0.0-beta.1", "2.0.0"))
 
     def test_sha256_reference_has_expected_format(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -45,18 +53,32 @@ class UpdaterSecurityTests(unittest.TestCase):
         self.assertIn("/FORCECLOSEAPPLICATIONS", command)
         self.assertTrue(any(argument.startswith("/LOG=") for argument in command))
 
-    def test_update_assistant_waits_instead_of_reopening_desktop(self):
+    def test_update_assistant_receives_installed_app_to_reopen(self):
         with tempfile.TemporaryDirectory() as folder:
             helper = os.path.join(folder, "SaaS Update Assistant.exe")
             installer = os.path.join(folder, "installer.exe")
             open(helper, "wb").close()
             command = build_update_assistant_command(
-                installer, "1.9.6", parent_pid=1234, helper_path=helper
+                installer, "2.0.0", parent_pid=1234, helper_path=helper,
+                launch_path=r"C:\Program Files\SaaS\SaaS Assistente PRO.exe",
             )
         self.assertEqual(command[0], helper)
         self.assertIn("--installer", command)
         self.assertIn("--parent-pid", command)
-        self.assertNotIn("SaaS Assistente PRO.exe", command)
+        self.assertIn("--launch-path", command)
+        self.assertIn(r"C:\Program Files\SaaS\SaaS Assistente PRO.exe", command)
+
+    def test_default_launch_path_targets_per_user_installation(self):
+        path = resolve_installed_app_path()
+        self.assertTrue(path.endswith(os.path.join("SaaS Assistente PRO", "SaaS Assistente PRO.exe")))
+
+    def test_helper_launches_updated_executable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            executable = os.path.join(folder, "SaaS Assistente PRO.exe")
+            open(executable, "wb").close()
+            with mock.patch("update_completion_helper.subprocess.Popen") as popen:
+                self.assertTrue(launch_updated_app(executable))
+            popen.assert_called_once()
 
     def test_completion_helper_uses_same_safe_installer_flags(self):
         command = installer_command(r"C:\Temp\installer.exe")

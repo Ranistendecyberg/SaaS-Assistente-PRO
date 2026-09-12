@@ -4,6 +4,7 @@ import urllib.request
 import subprocess
 import time
 import hashlib
+import re
 from urllib.parse import urlparse
 from PyQt6.QtWidgets import (
     QMessageBox, QApplication, QDialog, QVBoxLayout, 
@@ -120,8 +121,27 @@ def resolve_update_assistant_path():
     return os.path.join(base_dir, "SaaS Update Assistant.exe")
 
 
-def build_update_assistant_command(installer_path, version, parent_pid=None, helper_path=None):
-    """Comando que aguarda a instalação e só então autoriza a reabertura manual."""
+def resolve_installed_app_path():
+    """Retorna o executável que o instalador oficial cria para o usuário atual."""
+    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+    if local_app_data:
+        return os.path.join(
+            local_app_data,
+            "Programs",
+            "SaaS Assistente PRO",
+            "SaaS Assistente PRO.exe",
+        )
+    return os.path.join(os.path.dirname(sys.executable), "SaaS Assistente PRO.exe")
+
+
+def build_update_assistant_command(
+    installer_path,
+    version,
+    parent_pid=None,
+    helper_path=None,
+    launch_path=None,
+):
+    """Comando que fecha, instala e reabre o Desktop sem intervenção adicional."""
     assistant = str(helper_path or resolve_update_assistant_path())
     if not os.path.isfile(assistant):
         raise FileNotFoundError("O Assistente de Atualização não foi encontrado nesta instalação.")
@@ -130,6 +150,7 @@ def build_update_assistant_command(installer_path, version, parent_pid=None, hel
         "--installer", os.path.abspath(installer_path),
         "--version", str(version),
         "--parent-pid", str(parent_pid or os.getpid()),
+        "--launch-path", os.path.abspath(launch_path or resolve_installed_app_path()),
     ]
 
 
@@ -185,8 +206,8 @@ class UpdateInstallConfirmationDialog(QDialog):
 
         explanation = QLabel(
             "Ao continuar, o SaaS Assistente PRO será fechado para aplicar a atualização.\n\n"
-            "O sistema não reiniciará sozinho. Aguarde aproximadamente 15 segundos e "
-            "abra-o novamente pelo atalho da área de trabalho."
+            "O Assistente de Atualização fará a instalação e abrirá a nova versão "
+            "automaticamente. Você não precisará reabrir o sistema."
         )
         explanation.setWordWrap(True)
         explanation.setStyleSheet("""
@@ -302,7 +323,7 @@ class UpdateDownloadDialog(QDialog):
         layout.addWidget(self.lbl_status)
 
         lbl_hint = QLabel(
-            "Ao concluir, o sistema será fechado. Aguarde alguns segundos e abra-o novamente pelo atalho."
+            "Ao concluir, o sistema será fechado, atualizado e aberto novamente automaticamente."
         )
         lbl_hint.setWordWrap(True)
         lbl_hint.setStyleSheet("""
@@ -351,8 +372,7 @@ class UpdateDownloadDialog(QDialog):
             self._on_error(f"Não foi possível iniciar o instalador: {error}")
             return
 
-        # O assistente aguarda este processo terminar, executa o instalador até o fim
-        # e exibe a confirmação. Ele nunca reinicia o SaaS automaticamente.
+        # O assistente aguarda este processo terminar, instala e abre a versão nova.
         QApplication.closeAllWindows()
         QApplication.quit()
         os._exit(0)
@@ -426,15 +446,46 @@ class Updater:
             print("Erro ao checar atualizacao:", e)
 
     def _versao_maior(self, v1, v2):
-        try:
-            p1 = [int(x) for x in str(v1 or "0").strip().lower().lstrip('v').split('.')]
-            p2 = [int(x) for x in str(v2 or "0").strip().lower().lstrip('v').split('.')]
-            size = max(len(p1), len(p2))
-            p1 += [0] * (size - len(p1))
-            p2 += [0] * (size - len(p2))
-            return p1 > p2
-        except (TypeError, ValueError):
+        """Compara versões numéricas e pré-lançamentos como 2.0.0-beta.1."""
+        parsed_1 = self._parse_version(v1)
+        parsed_2 = self._parse_version(v2)
+        if parsed_1 is None or parsed_2 is None:
             return False
+
+        core_1, prerelease_1 = parsed_1
+        core_2, prerelease_2 = parsed_2
+        size = max(len(core_1), len(core_2))
+        core_1 += (0,) * (size - len(core_1))
+        core_2 += (0,) * (size - len(core_2))
+        if core_1 != core_2:
+            return core_1 > core_2
+
+        # A versão final é sempre posterior ao pré-lançamento do mesmo número.
+        if prerelease_1 is None or prerelease_2 is None:
+            return prerelease_1 is None and prerelease_2 is not None
+
+        for left, right in zip(prerelease_1, prerelease_2):
+            if left == right:
+                continue
+            left_numeric = left.isdigit()
+            right_numeric = right.isdigit()
+            if left_numeric and right_numeric:
+                return int(left) > int(right)
+            if left_numeric != right_numeric:
+                return not left_numeric
+            return left > right
+        return len(prerelease_1) > len(prerelease_2)
+
+    @staticmethod
+    def _parse_version(value):
+        text = str(value or "0").strip().lower().lstrip("v")
+        text = text.split("+", 1)[0]
+        match = re.fullmatch(r"(\d+(?:\.\d+)*)(?:-([0-9a-z.-]+))?", text)
+        if not match:
+            return None
+        core = tuple(int(part) for part in match.group(1).split("."))
+        prerelease = tuple(match.group(2).split(".")) if match.group(2) else None
+        return core, prerelease
 
     def executar_atualizacao(self, url, nova_versao, parent=None, expected_sha256=""):
         if not url:

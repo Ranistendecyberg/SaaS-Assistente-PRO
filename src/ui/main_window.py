@@ -1,8 +1,7 @@
 from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QStackedWidget, QLabel
 from PyQt6.QtCore import Qt, QTimer
 from src.ui.components.sidebar import Sidebar
-from src.ui.screens.extraction_screen import ExtractionScreen
-from src.ui.screens.dashboard_tabs_screen import DashboardTabsScreen
+from src.ui.lazy_screen import LazyScreen
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -34,10 +33,11 @@ class MainWindow(QMainWindow):
         
         # Conectar Sidebar ao Stack
         self.sidebar.navigation_requested.connect(self.handle_navigation)
+        self._active_sidebar_route = 6
         
-        # Iniciar Heartbeat (Batimento de Online)
+        # Iniciar Heartbeat (Batimento de Online) — usa singleton do LicenseManager
         from src.core.license_manager import LicenseManager
-        self.lm = LicenseManager()
+        self.lm = LicenseManager.get_instance()
         self.lm.enviar_heartbeat(True) # Pulso de abertura
         
         self.heartbeat_timer = QTimer(self)
@@ -71,15 +71,19 @@ class MainWindow(QMainWindow):
         if index == 4:
             self.abrir_tela_licenca(modo="pix")
             # Voltar o foco da sidebar para a aba anterior
-            self.sidebar.set_active_button(self.stack.currentIndex())
+            self.sidebar.set_active_button(self._active_sidebar_route)
         elif index == 5:
             self.abrir_tela_licenca(modo="chave")
-            self.sidebar.set_active_button(self.stack.currentIndex())
+            self.sidebar.set_active_button(self._active_sidebar_route)
         elif index == 8:
             self.abrir_tela_sobre()
-            self.sidebar.set_active_button(self.stack.currentIndex())
+            self.sidebar.set_active_button(self._active_sidebar_route)
+        elif index == 9:
+            self.stack.setCurrentIndex(8)
+            self._active_sidebar_route = 9
         else:
             self.stack.setCurrentIndex(index)
+            self._active_sidebar_route = index
             
     def force_tab_change(self, index):
         self.sidebar.handle_nav_click(index)
@@ -99,54 +103,91 @@ class MainWindow(QMainWindow):
         dialog.exec()
         
     def setup_screens(self):
-        # Tela 1: Extração e Disparo (Agora completa)
-        screen1 = ExtractionScreen()
-        self.stack.addWidget(screen1)
-        
-        # Tela 2: Motor WhatsApp (Agora real)
+        """Configura as rotas do QStackedWidget.
+
+        Telas pesadas (ExtractionScreen, WhatsAppScreen, DashboardTabsScreen,
+        CompanyAccountScreen) são envolvidas em LazyScreen e instanciadas
+        somente na primeira navegação do usuário para aquela rota, reduzindo
+        o tempo de inicialização do aplicativo.
+
+        Sinais entre ExtractionScreen e WhatsAppScreen são conectados via
+        callbacks on_ready(), que são chamados imediatamente após cada tela
+        ser instanciada, independentemente da ordem de navegação.
+        """
+        from src.ui.screens.extraction_screen import ExtractionScreen
         from src.ui.screens.whatsapp_screen import WhatsAppScreen
-        screen2 = WhatsAppScreen()
-        self.stack.addWidget(screen2)
-        
-        # Tela 3: Dashboard
         from src.ui.screens.dashboard_tabs_screen import DashboardTabsScreen
-        screen3 = DashboardTabsScreen()
-        self.stack.addWidget(screen3)
-        
-        # Tela 4: Configuração de Lojas
         from src.ui.screens.config_screen import ConfigScreen
+        from src.ui.screens.tutorial_screen import TutorialScreen
+        from src.ui.screens.suggestions_screen import SuggestionsScreen
+        from src.ui.screens.company_account_screen import CompanyAccountScreen
+
+        # --- Índice 0: Extração e Disparo (lazy) ---
+        self._lazy_extraction = LazyScreen(ExtractionScreen)
+        self.stack.addWidget(self._lazy_extraction)
+
+        # --- Índice 1: Motor WhatsApp (lazy) ---
+        self._lazy_whatsapp = LazyScreen(WhatsAppScreen)
+        self.stack.addWidget(self._lazy_whatsapp)
+
+        # Cada callback tenta efetuar uma única conexão bidirecional. O fluxo
+        # anterior conectava metade dos sinais duas vezes, dependendo da ordem
+        # em que as telas eram abertas.
+        self._runtime_screens_connected = False
+        self._lazy_extraction.on_ready(
+            lambda _screen: self._connect_runtime_screens_if_ready()
+        )
+        self._lazy_whatsapp.on_ready(
+            lambda _screen: self._connect_runtime_screens_if_ready()
+        )
+
+        # --- Índice 2: Dashboard (lazy) ---
+        self._lazy_dashboard = LazyScreen(DashboardTabsScreen)
+        self.stack.addWidget(self._lazy_dashboard)
+
+        # --- Índice 3: Configuração de Lojas (instanciação imediata — leve) ---
         screen4 = ConfigScreen()
         self.stack.addWidget(screen4)
-        
-        # Tela 5 (Index 4): Dummy para PIX
+
+        # --- Índice 4: Dummy para PIX ---
         self.stack.addWidget(QWidget())
-        
-        # Tela 6 (Index 5): Dummy para Licença
+
+        # --- Índice 5: Dummy para Licença ---
         self.stack.addWidget(QWidget())
-        
-        # Tela 7 (Index 6): Tutorial
-        from src.ui.screens.tutorial_screen import TutorialScreen
+
+        # --- Índice 6: Tutorial (instanciação imediata — tela inicial) ---
         screen_tutorial = TutorialScreen()
         self.stack.addWidget(screen_tutorial)
-        
-        # Tela 8 (Index 7): Sugestões de Melhorias
-        from src.ui.screens.suggestions_screen import SuggestionsScreen
+
+        # --- Índice 7: Sugestões de Melhorias (leve — instanciação imediata) ---
         screen_sugestoes = SuggestionsScreen()
         self.stack.addWidget(screen_sugestoes)
-        
-        # Set Tutorial as initial screen
+
+        # --- Índice 8: Conta Empresarial (lazy) ---
+        self._lazy_company = LazyScreen(CompanyAccountScreen)
+        self.stack.addWidget(self._lazy_company)
+        # Mantém referência compatível com código externo que acessa company_account_screen
+        # O atributo agora é o LazyScreen; screen() retorna a instância real quando existir.
+        self.company_account_screen = self._lazy_company
+
+        # Tela inicial: Tutorial
         self.stack.setCurrentIndex(6)
-        
-        # --- ROTEAMENTO DE SINAIS ENTRE TELAS ---
-        # Quando Extração pedir envio, aciona método send_message no WhatsApp
-        screen1.sig_dispatch_whatsapp.connect(screen2.send_message)
-        # Pular para a tela do WhatsApp automaticamente
-        screen1.sig_request_tab_change.connect(self.force_tab_change)
-        # Quando WhatsApp terminar, avisa a Extração para processar o próximo
-        screen2.sig_message_sent.connect(screen1.on_whatsapp_message_sent)
-        # Rota de verificação de login ANTES de começar os disparos
-        screen1.sig_check_whatsapp_login.connect(screen2.check_login_status)
-        screen2.sig_login_status_result.connect(screen1.on_login_status_result)
-        # Fluxo de Conversa Individual e Envio de Link sob demanda
-        screen1.sig_iniciar_conversa_individual.connect(screen2.abrir_conversa_cliente)
-        screen2.sig_link_individual_enviado.connect(screen1.on_link_individual_enviado)
+
+    def _connect_runtime_screens_if_ready(self):
+        """Conecta Extração e WhatsApp uma vez, quando ambos estiverem prontos."""
+        if getattr(self, "_runtime_screens_connected", False):
+            return False
+        extraction_screen = self._lazy_extraction.screen()
+        whatsapp_screen = self._lazy_whatsapp.screen()
+        if extraction_screen is None or whatsapp_screen is None:
+            return False
+
+        extraction_screen.sig_dispatch_whatsapp.connect(whatsapp_screen.send_message)
+        extraction_screen.sig_request_tab_change.connect(self.force_tab_change)
+        extraction_screen.sig_check_whatsapp_login.connect(whatsapp_screen.check_login_status)
+        extraction_screen.sig_iniciar_conversa_individual.connect(whatsapp_screen.abrir_conversa_cliente)
+        whatsapp_screen.sig_message_sent.connect(extraction_screen.on_whatsapp_message_sent)
+        whatsapp_screen.sig_login_status_result.connect(extraction_screen.on_login_status_result)
+        whatsapp_screen.sig_link_individual_enviado.connect(extraction_screen.on_link_individual_enviado)
+        self._runtime_screens_connected = True
+        return True

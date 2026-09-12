@@ -1,6 +1,6 @@
 import { jsonResponse, readJson, cleanText } from "../_shared/http.ts";
 import {
-  requireInstallation, requireUser, sha256,
+  requireInstallation, serviceClient, sha256,
 } from "../_shared/security.ts";
 
 Deno.serve(async (req) => {
@@ -12,20 +12,31 @@ Deno.serve(async (req) => {
     const hardwareId = cleanText(body.hardware_id, 128);
 
     if (action === "redeem_device_link_code") {
-      const code = cleanText(body.link_code, 160).toUpperCase();
-      if (code.length < 20) return jsonResponse({ error: "INVALID_LINK_CODE" }, 400);
-      const { client, user } = await requireUser(req);
+      const code = cleanText(body.link_code, 24).toUpperCase().replace(/\s/g, "");
+      if (!/^PC-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(code)) {
+        return jsonResponse({ error: "INVALID_LINK_CODE" }, 400);
+      }
+      const client = serviceClient();
       const { data, error } = await client.rpc("redeem_device_link_code_server", {
         p_code_hash: await sha256(code),
         p_hardware_id: hardwareId,
-        p_user_id: user.id,
         p_app_version: cleanText(body.app_version, 40) || null,
       });
       if (error) throw error;
+      if (data?.ok) {
+        const {data: license,error: licenseError}=await client.from("licenses").select("status")
+          .eq("installation_id",data.installation_id).single();
+        if (licenseError) throw licenseError;
+        data.payment_required=license.status === "blocked";
+      }
       return jsonResponse(data, data?.ok ? 201 : 409);
     }
 
     const { client, installation } = await requireInstallation(req, hardwareId);
+
+    if (["create_pix", "check_pix"].includes(action)) {
+      return jsonResponse({error:"USE_COMPANY_BILLING"},410);
+    }
 
     if (action === "heartbeat") {
       const { error } = await client.from("installations").update({
@@ -39,7 +50,7 @@ Deno.serve(async (req) => {
 
     if (action === "license_status") {
       const { data: license, error } = await client.from("licenses")
-        .select("status, license_type, expires_at, offline_grace_hours, extra_messages, monthly_price, report_links, adjustment_notice, detailed_diagnostics_until")
+        .select("status, license_type, expires_at, offline_grace_hours, extra_messages, monthly_price, report_links, adjustment_notice, detailed_diagnostics_until, daily_message_limit, batch_limit")
         .eq("installation_id", installation.id).single();
       if (error) throw error;
       const { data: config } = await client.from("system_config")
@@ -53,7 +64,7 @@ Deno.serve(async (req) => {
         .select("sent_count")
         .eq("installation_id", installation.id)
         .eq("usage_date", today).maybeSingle();
-      const dailyLimit = license.license_type === "trial" ? 6 : 30;
+      const dailyLimit = license.daily_message_limit ?? (license.license_type === "trial" ? 6 : 30);
       await client.from("installations").update({
         online: true, last_seen_at: new Date().toISOString(),
         app_version: cleanText(body.app_version, 40) || null,
@@ -80,9 +91,9 @@ Deno.serve(async (req) => {
 
     if (action === "consume_message") {
       const { data: license, error: licenseError } = await client.from("licenses")
-        .select("license_type").eq("installation_id", installation.id).single();
+        .select("license_type, daily_message_limit").eq("installation_id", installation.id).single();
       if (licenseError) throw licenseError;
-      const dailyLimit = license.license_type === "trial" ? 6 : 30;
+      const dailyLimit = license.daily_message_limit ?? (license.license_type === "trial" ? 6 : 30);
       const { data, error } = await client.rpc("consume_message_server", {
         p_installation_id: installation.id, p_daily_limit: dailyLimit,
       });
@@ -90,71 +101,35 @@ Deno.serve(async (req) => {
       return jsonResponse(data);
     }
 
-    if (action === "create_pix") {
-      const { data: license, error: licenseError } = await client.from("licenses")
-        .select("monthly_price").eq("installation_id", installation.id).single();
-      if (licenseError) throw licenseError;
-      const { data: config, error: configError } = await client.from("system_config")
-        .select("default_monthly_price").eq("singleton", true).single();
-      if (configError) throw configError;
-      const amount = Number(license.monthly_price ?? config.default_monthly_price ?? 250);
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error("INVALID_PAYMENT_AMOUNT");
-      const providerResponse = await fetch("https://saas-pix-api.onrender.com/gerar_pix", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          valor: Math.round(amount * 100) / 100,
-          descricao: "Assinatura Mensal (30 dias) - SaaS Assistente PRO",
-          email: "cliente@software.com.br",
-        }),
-        signal: AbortSignal.timeout(65000),
-      });
-      if (!providerResponse.ok) throw new Error("PAYMENT_PROVIDER_ERROR");
-      const providerData = await providerResponse.json();
-      const paymentId = cleanText(providerData.payment_id, 160);
-      const qrCode = cleanText(providerData.qr_code_str, 8000);
-      if (!providerData.sucesso || !paymentId || !qrCode) throw new Error("PAYMENT_PROVIDER_ERROR");
-      const { error: sessionError } = await client.from("payment_sessions").insert({
-        provider_payment_id: paymentId,
-        installation_id: installation.id,
-        amount,
-        status: "pending",
-        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      });
-      if (sessionError) throw sessionError;
-      return jsonResponse({ ok: true, sucesso: true, payment_id: paymentId, qr_code_str: qrCode, amount });
-    }
-
-    if (action === "check_pix") {
-      const paymentId = cleanText(body.payment_id, 160);
-      const { data: payment, error: paymentError } = await client.from("payment_sessions")
-        .select("provider_payment_id, status, expires_at")
-        .eq("provider_payment_id", paymentId)
-        .eq("installation_id", installation.id).maybeSingle();
-      if (paymentError) throw paymentError;
-      if (!payment) return jsonResponse({ error: "PAYMENT_NOT_FOUND" }, 404);
-      if (payment.status === "applied") {
-        const { data: currentLicense } = await client.from("licenses")
-          .select("expires_at").eq("installation_id", installation.id).single();
-        return jsonResponse({ ok: true, aprovado: true, already_applied: true, expires_at: currentLicense?.expires_at });
+    if (["reserve_message", "confirm_message", "release_message"].includes(action)) {
+      const reservationId = cleanText(body.reservation_id, 36);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(reservationId)) {
+        return jsonResponse({ error: "INVALID_RESERVATION_ID" }, 400);
       }
-      if (payment.status !== "pending" || Date.parse(payment.expires_at) < Date.now()) {
-        return jsonResponse({ ok: true, aprovado: false, error: "PAYMENT_SESSION_EXPIRED" });
+      if (action === "reserve_message") {
+        const { data: license, error: licenseError } = await client.from("licenses")
+          .select("license_type, daily_message_limit").eq("installation_id", installation.id).single();
+        if (licenseError) throw licenseError;
+        const dailyLimit = license.daily_message_limit ?? (license.license_type === "trial" ? 6 : 30);
+        const { data, error } = await client.rpc("reserve_message_send_server", {
+          p_installation_id: installation.id,
+          p_daily_limit: dailyLimit,
+          p_reservation_id: reservationId,
+        });
+        if (error) throw error;
+        return jsonResponse(data);
       }
-      const verification = await fetch(
-        `https://saas-pix-api.onrender.com/verificar_pagamento/${encodeURIComponent(paymentId)}`,
-        { method: "GET", signal: AbortSignal.timeout(30000) },
-      );
-      if (!verification.ok) throw new Error("PAYMENT_PROVIDER_ERROR");
-      const providerData = await verification.json();
-      if (!providerData.aprovado) return jsonResponse({ ok: true, aprovado: false });
-      const { data, error } = await client.rpc("apply_approved_payment_server", {
+      const rpcName = action === "confirm_message"
+        ? "confirm_message_send_server"
+        : "release_message_send_server";
+      const { data, error } = await client.rpc(rpcName, {
         p_installation_id: installation.id,
-        p_provider_payment_id: paymentId,
+        p_reservation_id: reservationId,
       });
       if (error) throw error;
-      return jsonResponse({ ...data, aprovado: Boolean(data?.ok) });
+      return jsonResponse(data);
     }
+
 
     if (action === "telemetry") {
       const events = Array.isArray(body.events) ? body.events.slice(0, 100) : [];

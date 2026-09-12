@@ -40,10 +40,10 @@ class Sidebar(QWidget):
         layout.addWidget(gestao_label)
         
         btn_config = self.create_nav_button("⚙️ Configuração de Lojas", 3)
-        btn_pix = self.create_nav_button("💳 Loja PIX (Recarga)", 4)
+        btn_conta = self.create_nav_button("🏢 Conta Empresarial", 9)
         btn_licenca = self.create_nav_button("🔑 Validar Chave de Acesso", 5)
         layout.addWidget(btn_config)
-        layout.addWidget(btn_pix)
+        layout.addWidget(btn_conta)
         layout.addWidget(btn_licenca)
         
         # Ajuda & Suporte

@@ -5,7 +5,9 @@ def get_base_dir():
     # Salvar sempre na pasta oculta do Windows (AppData/Roaming) para proteger contra exclusão acidental e engenharia reversa
     appdata_path = os.getenv('APPDATA')
     if appdata_path:
-        base = os.path.join(appdata_path, "SaasAssistentePRO")
+        # A versão 2.0 usa autenticação, tokens e contrato próprios. Manter a
+        # pasta separada impede que um beta sobrescreva a sessão/dados da 1.9.6.
+        base = os.path.join(appdata_path, "SaasAssistentePRO-v2")
         os.makedirs(base, exist_ok=True)
         return base
         

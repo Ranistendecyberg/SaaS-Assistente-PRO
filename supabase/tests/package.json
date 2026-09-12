@@ -1,0 +1,1 @@
+{"private":true,"type":"module","scripts":{"test":"node payment_safety.test.mjs","test:scalability":"node scalability_migrations.test.mjs"},"devDependencies":{"@electric-sql/pglite":"0.5.8"}}

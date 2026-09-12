@@ -12,6 +12,16 @@ SUPABASE_URL = "https://hnwvtoiiuqagzmuqygkw.supabase.co"
 SUPABASE_PUBLISHABLE_KEY = "sb_publishable_B9FIBJ6QvRZ691rGqN5Drw_W-GOXmsI"
 
 
+def enterprise_monthly_total(subscription, installations) -> float:
+    """Calcula o total consolidado sem depender da interface gráfica."""
+    subscription = subscription if isinstance(subscription, dict) else {}
+    base = float(subscription.get("base_price") or 0)
+    additional = float(subscription.get("additional_seat_price") or 0)
+    billable = [item for item in (installations or [])
+                if item.get("billing_status") in {"active", "pending_removal", "blocked"}]
+    return 0 if not billable else base + additional * (len(billable) - 1)
+
+
 class SupabaseAuthError(RuntimeError):
     def __init__(self, message: str, status: int = 0, code: str = ""):
         super().__init__(message)
@@ -120,7 +130,7 @@ class AdminSupabaseClient:
 def friendly_auth_error(error: Exception) -> str:
     if not isinstance(error, SupabaseAuthError):
         return "Não foi possível concluir a autenticação."
-    if error.code in {"invalid_credentials", "invalid_grant"} or error.status == 400:
+    if error.code in {"invalid_credentials", "invalid_grant"}:
         return "E-mail ou senha incorretos."
     if error.code == "mfa_verification_failed" or error.status == 422:
         return "Código do autenticador inválido ou expirado."
@@ -131,11 +141,22 @@ def friendly_auth_error(error: Exception) -> str:
     if error.status == 428:
         return "A verificação em duas etapas é obrigatória."
     messages = {
+        "REFUND_NOT_CONFIRMED": "O Mercado Pago ainda não confirmou o reembolso integral. A pendência foi preservada.",
+        "RECONCILIATION_NOT_PENDING": "Esta pendência já foi resolvida ou não foi encontrada. Atualize a lista.",
+        "ENTERPRISE_BILLING_MANAGED": "Altere preço e vigência em Por empresa → Editar assinatura. Nesta tela ajuste somente envios e comunicação.",
+        "ENTERPRISE_DEVICE_DELETE_FORBIDDEN": "Computadores empresariais não podem ser apagados. Use o bloqueio ou a remoção programada para preservar a cobrança e o histórico.",
+        "INVALID_MESSAGE_LIMIT": "Informe limites inteiros entre 1 e 1000.",
         "KEY_ALREADY_USED": "Esta chave já foi utilizada. Corrija o benefício diretamente na licença da máquina.",
         "KEY_ALREADY_REVOKED": "Esta chave já foi revogada.",
         "KEY_EXPIRED": "Esta chave já expirou e não pode mais ser utilizada.",
         "KEY_NOT_FOUND": "A chave selecionada não foi encontrada. Atualize os dados e tente novamente.",
         "KEY_NOT_REVOCABLE": "Esta chave não está disponível para revogação.",
+        "ENTERPRISE_NOT_FOUND": "A empresa selecionada não foi encontrada. Atualize os dados e tente novamente.",
+        "ENTERPRISE_DEVICE_NOT_FOUND": "O computador selecionado não foi encontrado ou já foi removido.",
+        "INVALID_ENTERPRISE_UPDATE": "Revise o status, os valores e a data da assinatura.",
+        "INVALID_ENTERPRISE_EXPIRY": "Informe uma data de vigência válida.",
+        "INVALID_DEVICE_STATUS": "O estado solicitado para o computador é inválido.",
+        "SUBSCRIPTION_NOT_ACTIVE": "Ative ou renove a assinatura da empresa antes de liberar este computador.",
     }
     if str(error) in messages:
         return messages[str(error)]

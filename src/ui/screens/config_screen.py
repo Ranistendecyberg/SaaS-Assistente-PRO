@@ -217,8 +217,8 @@ class ConfigScreen(QWidget):
         # Remove tudo que não for número (pontos, traços, espaços)
         cpf_numeros = re.sub(r'\D', '', cpf_raw)
         
-        # Preenche com zeros à esquerda até dar 20 caracteres
-        cpf_formatado = cpf_numeros.zfill(20)
+        # Preenche com zeros à esquerda até completar 11 dígitos (CPF brasileiro)
+        cpf_formatado = cpf_numeros.zfill(11)
         
         self.config_data.setdefault("consultores", []).append({"nome": nome, "cpf": cpf_formatado})
         self.save_config()

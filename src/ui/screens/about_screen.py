@@ -3,6 +3,32 @@ from PyQt6.QtCore import Qt
 from src.core.license_manager import LicenseManager
 from src.core.updater import Updater
 
+
+from PyQt6.QtCore import QThread, pyqtSignal
+
+class CloudCheckThread(QThread):
+    finished = pyqtSignal(dict)
+    error = pyqtSignal()
+    
+    def __init__(self, current_version):
+        super().__init__()
+        self.current_version = current_version
+        
+    def run(self):
+        try:
+            from src.core.license_manager import LicenseManager
+            manager = LicenseManager()
+            resposta = manager.secure_backend.license_status(self.current_version)
+            sistema = dict(resposta.get("system") or {})
+            dados = {
+                "versao_atual": sistema.get("current_version"),
+                "url_download": sistema.get("installer_url"),
+                "installer_sha256": sistema.get("installer_sha256"),
+            }
+            self.finished.emit(dados)
+        except Exception:
+            self.error.emit()
+
 class AboutScreen(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -77,34 +103,32 @@ class AboutScreen(QDialog):
         dialog = TermsDialog(self, apenas_leitura=True)
         dialog.exec()
 
+
     def checar_nuvem(self):
-        try:
-            manager = LicenseManager()
-            resposta = manager.secure_backend.license_status(self.current_version)
-            sistema = dict(resposta.get("system") or {})
-            dados = {
-                "versao_atual": sistema.get("current_version"),
-                "url_download": sistema.get("installer_url"),
-                "installer_sha256": sistema.get("installer_sha256"),
-            }
-                
-            if not dados:
-                self.lbl_status.setText("Não foi possível checar atualizações.")
-                return
-                
-            self.versao_nuvem = dados.get("versao_atual") or dados.get("versao_recente", "1.0.0")
-            self.link_download = dados.get("link_download") or dados.get("url_download", "")
-            self.installer_sha256 = str(dados.get("installer_sha256") or "")
+        self.thread = CloudCheckThread(self.current_version)
+        self.thread.finished.connect(self.on_nuvem_finished)
+        self.thread.error.connect(self.on_nuvem_error)
+        self.thread.start()
+
+    def on_nuvem_finished(self, dados):
+        if not dados:
+            self.lbl_status.setText("Não foi possível checar atualizações.")
+            return
             
-            updater = Updater(self.current_version)
-            if updater._versao_maior(self.versao_nuvem, self.current_version):
-                self.lbl_status.setText(f"🚀 Nova versão ({self.versao_nuvem}) disponível!")
-                self.btn_atualizar.setEnabled(True)
-            else:
-                self.lbl_status.setText("✅ Seu sistema está na versão mais recente.")
-                self.lbl_status.setStyleSheet("font-size: 13px; color: #22C55E;")
-        except Exception as e:
-            self.lbl_status.setText("Erro de conexão com o servidor.")
+        self.versao_nuvem = dados.get("versao_atual") or dados.get("versao_recente", "1.0.0")
+        self.link_download = dados.get("link_download") or dados.get("url_download", "")
+        self.installer_sha256 = str(dados.get("installer_sha256") or "")
+        
+        updater = Updater(self.current_version)
+        if updater._versao_maior(self.versao_nuvem, self.current_version):
+            self.lbl_status.setText(f"🚀 Nova versão ({self.versao_nuvem}) disponível!")
+            self.btn_atualizar.setEnabled(True)
+        else:
+            self.lbl_status.setText("✅ Seu sistema está na versão mais recente.")
+            self.lbl_status.setStyleSheet("font-size: 13px; color: #22C55E;")
+
+    def on_nuvem_error(self):
+        self.lbl_status.setText("Erro de conexão com o servidor.")
 
     def iniciar_atualizacao(self):
         self.btn_atualizar.setEnabled(False)

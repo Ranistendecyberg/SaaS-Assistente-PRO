@@ -33,7 +33,25 @@ class DashboardComparativoScreen(QWidget):
         self.df_ssi = pd.DataFrame()
         self.sent_surveys = set()
         self.setup_ui()
-        QTimer.singleShot(150, self.carregar_dados)
+
+    @staticmethod
+    def _classificar_recomendacao(valor):
+        """Classifica somente notas válidas de 0 a 10; ausência não é detrator."""
+        try:
+            if valor is None or pd.isna(valor):
+                return "SEM_NOTA", None
+            nota = float(str(valor).strip().replace(',', '.'))
+            if nota < 0 or nota > 10:
+                return "SEM_NOTA", None
+        except (TypeError, ValueError):
+            return "SEM_NOTA", None
+
+        nota_exibida = int(round(nota))
+        if nota >= 9:
+            return "PROMOTOR", nota_exibida
+        if nota >= 7:
+            return "NEUTRO", nota_exibida
+        return "DETRATOR", nota_exibida
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -573,17 +591,22 @@ class DashboardComparativoScreen(QWidget):
         if col_nps not in df.columns:
             col_nps = next((c for c in df.columns if 'recomenda' in c.lower()), None)
 
-        promotores = neutros = detratores = 0
+        promotores = neutros = detratores = total_nps = 0
         if col_nps and col_nps in df.columns:
-            s_nps = pd.to_numeric(df[col_nps], errors='coerce').dropna()
+            s_nps = serie_numerica(df, col_nps).dropna()
+            s_nps = s_nps[s_nps.between(0, 10)]
+            total_nps = len(s_nps)
             promotores = int((s_nps >= 9).sum())
             neutros = int(((s_nps >= 7) & (s_nps <= 8)).sum())
             detratores = int((s_nps <= 6).sum())
+        nps_score = ((promotores - detratores) / total_nps * 100) if total_nps else 0.0
+        sem_nota_count = total_respostas - total_nps
 
         # Top2Box Geral
         col_geral = 'Avaliação satisfação geral'
         if col_geral in df.columns:
-            s_geral = pd.to_numeric(df[col_geral], errors='coerce').dropna()
+            s_geral = serie_numerica(df, col_geral).dropna()
+            s_geral = s_geral[s_geral.between(0, 10)]
             top2box = (s_geral >= 9).sum() / len(s_geral) * 100 if len(s_geral) > 0 else 0.0
         else:
             top2box = 0.0
@@ -658,7 +681,8 @@ class DashboardComparativoScreen(QWidget):
                 c_total = len(group)
                 c_tsi = calcular_tsi_grupo(group)
                 if col_geral and col_geral in group.columns:
-                    c_g = pd.to_numeric(group[col_geral], errors='coerce').dropna()
+                    c_g = serie_numerica(group, col_geral).dropna()
+                    c_g = c_g[c_g.between(0, 10)]
                     c_top = (c_g >= 9).sum() / len(c_g) * 100 if len(c_g) > 0 else 0.0
                 else:
                     c_top = 0.0
@@ -721,18 +745,8 @@ class DashboardComparativoScreen(QWidget):
             return "-"
 
         for _, r in df.iterrows():
-            nota_raw = r.get(col_nps, 0) if col_nps and col_nps in df.columns else 0
-            try:
-                nota_val = int(round(float(str(nota_raw).replace(',', '.'))))
-            except:
-                nota_val = 0
-
-            if nota_val >= 9:
-                status_tipo = "PROMOTOR"
-            elif nota_val >= 7:
-                status_tipo = "NEUTRO"
-            else:
-                status_tipo = "DETRATOR"
+            nota_raw = r.get(col_nps) if col_nps and col_nps in df.columns else None
+            status_tipo, nota_val = DashboardComparativoScreen._classificar_recomendacao(nota_raw)
 
             os_full = str(r.get(col_os, '')).strip() if col_os else ''
             os_num = os_full.split('-')[-1] if '-' in os_full else (os_full or str(r.get('OS', '-')))
@@ -832,16 +846,17 @@ class DashboardComparativoScreen(QWidget):
                 })
 
         metrics = {
-            'nps': tsi_score,
+            'nps': nps_score,
             'tsi': tsi_score,
             'top2box': top2box,
             'total_respostas': total_respostas,
             'promotores_count': promotores,
             'neutros_count': neutros,
             'detratores_count': detratores,
-            'promotores_pct': (promotores / total_respostas * 100),
-            'neutros_pct': (neutros / total_respostas * 100),
-            'detratores_pct': (detratores / total_respostas * 100),
+            'promotores_pct': (promotores / total_nps * 100) if total_nps else 0.0,
+            'neutros_pct': (neutros / total_nps * 100) if total_nps else 0.0,
+            'detratores_pct': (detratores / total_nps * 100) if total_nps else 0.0,
+            'sem_nota_count': sem_nota_count,
             'saas_enviados': total_saas_enviados,
             'saas_taxa_resp': taxa_resp,
             'dimensoes': dimensoes,
@@ -890,6 +905,7 @@ class DashboardComparativoScreen(QWidget):
         neutros = resumo_recomendacao['neutrals']
         detratores = resumo_recomendacao['detractors']
         total_nps = resumo_recomendacao['valid']
+        sem_nota_count = total_respostas - total_nps
         nps_score = resumo_recomendacao['nps']
         ssi_score = calculate_ssi_percentage(df, 'satisfaction')
         satisfacao_geral = ssi_score
@@ -958,18 +974,8 @@ class DashboardComparativoScreen(QWidget):
             return "-"
 
         for _, r in df.iterrows():
-            nota_raw = r.get(col_nps, 0) if col_nps and col_nps in df.columns else 0
-            try:
-                nota_val = int(round(float(str(nota_raw).replace(',', '.'))))
-            except:
-                nota_val = 0
-
-            if nota_val >= 9:
-                status_tipo = "PROMOTOR"
-            elif nota_val >= 7:
-                status_tipo = "NEUTRO"
-            else:
-                status_tipo = "DETRATOR"
+            nota_raw = r.get(col_nps) if col_nps and col_nps in df.columns else None
+            status_tipo, nota_val = DashboardComparativoScreen._classificar_recomendacao(nota_raw)
 
             posse_str = str(r.get(col_posse, '-')).strip() if col_posse else '-'
             chassi_val = posse_str.split('-')[-1] if '-' in posse_str else posse_str
@@ -1099,6 +1105,7 @@ class DashboardComparativoScreen(QWidget):
             'promotores_pct': (promotores / total_nps * 100) if total_nps else 0.0,
             'neutros_pct': (neutros / total_nps * 100) if total_nps else 0.0,
             'detratores_pct': (detratores / total_nps * 100) if total_nps else 0.0,
+            'sem_nota_count': sem_nota_count,
             'recompra_pct': recompra_pct,
             'entrega_pct': entrega_pct,
             'saas_taxa_resp': taxa_resp,
@@ -1156,12 +1163,13 @@ class DashboardComparativoScreen(QWidget):
         
         is_todos = ("TODOS" in statuses) or (len(statuses) == 0)
         has_com_filtro = "COMENTARIOS" in statuses
-        status_cats = [s for s in statuses if s in ["PROMOTOR", "NEUTRO", "DETRATOR"]]
+        status_cats = [s for s in statuses if s in ["PROMOTOR", "NEUTRO", "DETRATOR", "SEM_NOTA"]]
         
         rotulos_filtros = []
         if "PROMOTOR" in status_cats: rotulos_filtros.append("Promotores")
         if "NEUTRO" in status_cats: rotulos_filtros.append("Neutros")
         if "DETRATOR" in status_cats: rotulos_filtros.append("Detratores")
+        if "SEM_NOTA" in status_cats: rotulos_filtros.append("Sem nota")
         if has_com_filtro: rotulos_filtros.append("Com Feedback")
         if termo: rotulos_filtros.append(f'Busca: "{termo}"')
         
@@ -1234,6 +1242,7 @@ class DashboardComparativoScreen(QWidget):
         promotores_cnt = metrics.get('promotores_count', 0)
         neutros_cnt = metrics.get('neutros_count', 0)
         detratores_cnt = metrics.get('detratores_count', 0)
+        sem_nota_cnt = metrics.get('sem_nota_count', 0)
         
         promotores_pct = metrics.get('promotores_pct', 0.0)
         neutros_pct = metrics.get('neutros_pct', 0.0)
@@ -1327,9 +1336,12 @@ class DashboardComparativoScreen(QWidget):
             elif st == "NEUTRO":
                 badge_st = f"<span class='status-pill status-neutro'>🟡 NEUTRO • Nota {nota}</span>"
                 border_color = "#F59E0B"
-            else:
+            elif st == "DETRATOR":
                 badge_st = f"<span class='status-pill status-detrator'>🔴 DETRATOR • Nota {nota}</span>"
                 border_color = "#EF4444"
+            else:
+                badge_st = "<span class='status-pill status-sem-nota'>⚪ SEM NOTA DE RECOMENDAÇÃO</span>"
+                border_color = "#94A3B8"
 
             # Telefone ocultado no relatório conforme solicitação
             fone_badge = ""
@@ -1460,6 +1472,7 @@ class DashboardComparativoScreen(QWidget):
             <button class="btn-filter" data-status="PROMOTOR" onclick="toggleFiltro('PROMOTOR', this)">Promotores ({promotores_cnt})</button>
             <button class="btn-filter" data-status="NEUTRO" onclick="toggleFiltro('NEUTRO', this)">Neutros ({neutros_cnt})</button>
             <button class="btn-filter" data-status="DETRATOR" onclick="toggleFiltro('DETRATOR', this)">Detratores ({detratores_cnt})</button>
+            <button class="btn-filter" data-status="SEM_NOTA" onclick="toggleFiltro('SEM_NOTA', this)">Sem nota ({sem_nota_cnt})</button>
             <button class="btn-filter" data-status="COMENTARIOS" onclick="toggleFiltro('COMENTARIOS', this)">Com Verbalização ({coments_cnt})</button>
         </div>
         """
@@ -1754,6 +1767,7 @@ class DashboardComparativoScreen(QWidget):
                 .status-promotor {{ background: #DCFCE7; color: #15803D; }}
                 .status-neutro {{ background: #FEF3C7; color: #B45309; }}
                 .status-detrator {{ background: #FEE2E2; color: #B91C1C; }}
+                .status-sem-nota {{ background: #E2E8F0; color: #475569; }}
                 
                 .resp-body {{
                     display: flex;
@@ -1862,7 +1876,7 @@ class DashboardComparativoScreen(QWidget):
                     
                     const isTodos = activeStatuses.includes('TODOS');
                     const hasComFiltro = activeStatuses.includes('COMENTARIOS');
-                    const statusCategorias = activeStatuses.filter(s => s === 'PROMOTOR' || s === 'NEUTRO' || s === 'DETRATOR');
+                    const statusCategorias = activeStatuses.filter(s => s === 'PROMOTOR' || s === 'NEUTRO' || s === 'DETRATOR' || s === 'SEM_NOTA');
                     
                     cards.forEach(card => {{
                         const cardStatus = card.getAttribute('data-status');
@@ -2028,6 +2042,7 @@ class DashboardComparativoScreen(QWidget):
         promotores_cnt = metrics.get('promotores_count', 0)
         neutros_cnt = metrics.get('neutros_count', 0)
         detratores_cnt = metrics.get('detratores_count', 0)
+        sem_nota_cnt = metrics.get('sem_nota_count', 0)
         
         promotores_pct = metrics.get('promotores_pct', 0.0)
         neutros_pct = metrics.get('neutros_pct', 0.0)
@@ -2110,9 +2125,12 @@ class DashboardComparativoScreen(QWidget):
             elif st == "NEUTRO":
                 badge_st = f"<span class='status-pill status-neutro'>🟡 NEUTRO • Nota {nota}</span>"
                 border_color = "#F59E0B"
-            else:
+            elif st == "DETRATOR":
                 badge_st = f"<span class='status-pill status-detrator'>🔴 DETRATOR • Nota {nota}</span>"
                 border_color = "#EF4444"
+            else:
+                badge_st = "<span class='status-pill status-sem-nota'>⚪ SEM NOTA DE RECOMENDAÇÃO</span>"
+                border_color = "#94A3B8"
 
             chassi_badge = f"<span class='meta-tag'>🏷️ Chassi: <b>{r.get('chassi')}</b></span>" if r.get('chassi') and r.get('chassi') != '-' else ""
             mod_badge = f"<span class='meta-tag'>🏍️ <b>{r.get('modelo')}</b></span>" if r.get('modelo') and r.get('modelo') != '-' else ""
@@ -2238,6 +2256,7 @@ class DashboardComparativoScreen(QWidget):
             <button class="btn-filter" data-status="PROMOTOR" onclick="toggleFiltro('PROMOTOR', this)">Promotores ({promotores_cnt})</button>
             <button class="btn-filter" data-status="NEUTRO" onclick="toggleFiltro('NEUTRO', this)">Neutros ({neutros_cnt})</button>
             <button class="btn-filter" data-status="DETRATOR" onclick="toggleFiltro('DETRATOR', this)">Detratores ({detratores_cnt})</button>
+            <button class="btn-filter" data-status="SEM_NOTA" onclick="toggleFiltro('SEM_NOTA', this)">Sem nota ({sem_nota_cnt})</button>
             <button class="btn-filter" data-status="COMENTARIOS" onclick="toggleFiltro('COMENTARIOS', this)">Com Feedback ({coments_cnt})</button>
         </div>
         """
@@ -2476,6 +2495,7 @@ class DashboardComparativoScreen(QWidget):
                 .status-promotor {{ background: #DCFCE7; color: #15803D; }}
                 .status-neutro {{ background: #FEF3C7; color: #B45309; }}
                 .status-detrator {{ background: #FEE2E2; color: #B91C1C; }}
+                .status-sem-nota {{ background: #E2E8F0; color: #475569; }}
                 
                 .resp-body {{
                     display: flex;
@@ -2584,7 +2604,7 @@ class DashboardComparativoScreen(QWidget):
                     
                     const isTodos = activeStatuses.includes('TODOS');
                     const hasComFiltro = activeStatuses.includes('COMENTARIOS');
-                    const statusCategorias = activeStatuses.filter(s => s === 'PROMOTOR' || s === 'NEUTRO' || s === 'DETRATOR');
+                    const statusCategorias = activeStatuses.filter(s => s === 'PROMOTOR' || s === 'NEUTRO' || s === 'DETRATOR' || s === 'SEM_NOTA');
                     
                     cards.forEach(card => {{
                         const cardStatus = card.getAttribute('data-status');

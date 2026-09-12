@@ -1,5 +1,267 @@
 # Status de Desenvolvimento — Assistente PRO Desktop
 
+## Auditoria de arquitetura e escalabilidade — 11/09/2026
+
+- Corrigidos cache TSI/SSI entre instâncias, índice de leads obsoleto e conexão duplicada de sinais nas telas lazy.
+- Migrações 025/026/028 tornadas executáveis e compatíveis com o esquema real. Transferência de principal agora é atômica; manutenção usa lotes, `SKIP LOCKED`, índices parciais e ACL service-role.
+- Transferência do principal alinhada à regra owner-only na tela e account-api.
+- Regressão final: 198 testes Python aprovados com Pillow compatível. Backend: 17 financeiros, 13 HTTP e suíte de migrações de escalabilidade aprovados.
+- Migrações 024–029 aprovadas em clone PostgreSQL 17.11; duas conexões reais confirmaram a correção da ordem de locks sem deadlock/timeout. Clone encerrado após o teste.
+- Release oficial 2.1.3 compilada. Instalador com 201.277.520 bytes e SHA-256 `6cc9223ca379cef0736775e708673973a445448c9599d6de6087e439af8d4176`; manifesto confere em hash, tamanho e versão.
+- Smoke test instalou silenciosamente em pasta isolada, confirmou binário idêntico e foi removido sem reinício. A instalação oficial existente foi preservada e seu atalho do Menu Iniciar restaurado após o teste.
+- Migrações 024–029 aplicadas no Supabase de produção. `account-api` e `cron-worker` publicados; postflight confirmou as ACLs, endpoint sem autenticação respondeu 401 e nenhuma conta/pagamento real foi alterada.
+- `pg_cron` 1.6.4 habilitado e job `saas-hourly-maintenance` ativo a cada hora para as três rotinas de limpeza em lote.
+- Análise completa e limites residuais registrados em `memory/analise_escalabilidade_2026-09-11.md`. O instalador ainda não está assinado digitalmente e a publicação do binário/OTA aguarda canal autenticado e decisão sobre o aviso do SmartScreen.
+
+## Otimizações de escalabilidade — 11/09/2026
+
+- **8 grupos de melhorias implementados** sem quebrar funcionalidades existentes. 69 testes unitários aprovados após as mudanças. Ponto de restauração criado em `backups/restore_point_pre_scalability_20260911_201300.zip` (SHA-256: C06B59D67F305CF7E19478ACE92F8845167ABB9CD1AA470DF4D5DC42FEE0B11D).
+- **Versão 2.1.1 gerada com sucesso!** Instalador compilado em `dist/Instalador_SaaS_Assistente_PRO_v2.1.1.exe`. Manifesto em `release_v2.1.1.json`. SHA-256 do instalador: `da4259587323266eb09dc533dbf4fb312f93cefb56d92ca58ca798208c2c71b6`.
+- **Novo:** `src/core/app_cache.py` — Cache singleton thread-safe com TTL. Centraliza armazenamento temporário em memória.
+- **Novo:** `src/ui/lazy_screen.py` — Proxy que instancia telas PyQt6 somente na primeira exibição. Sinais reconectados via callbacks `on_ready()`.
+- **Modificado:** `src/core/database.py` — Cache em memória (`_records_cache`, `_ssi_cache`, `_leads_index_cache`), invalidado em escritas. `find_lead()` usa índice pré-computado O(1). `import re` movido ao topo. Compatível com testes que usam `__new__` via `_ensure_cache_attrs()`.
+- **Modificado:** `src/core/license_manager.py` — Singleton via `LicenseManager.get_instance()`. Hardware ID cacheado como variável de classe (powershell apenas uma vez por processo). `LicenseManager()` legado preservado para compatibilidade com testes.
+- **Modificado:** `src/core/dashboard_engine.py` — `_rebuild_indexes()` pré-computa dicionários de lojas e consultores. Lookups O(1) substituem loops O(n×m). `import re`/`unicodedata` no topo.
+- **Modificado:** `src/core/queue_manager.py` — Persistência JSON atômica opcional (`persist=False` por padrão — retrocompatível).
+- **Modificado:** `src/core/backup_manager.py` — `criar_backup()` executa em thread daemon, não bloqueia inicialização.
+- **Modificado:** `src/core/telemetry.py` — `_save_queue()` usa escrita atômica (`os.replace`). `_machine_id()` reutiliza `LicenseManager._cached_chassi` sem novo subprocess.
+- **Modificado:** `src/ui/main_window.py` — `ExtractionScreen`, `WhatsAppScreen`, `DashboardTabsScreen`, `CompanyAccountScreen` carregadas sob demanda via `LazyScreen`. `LicenseManager` acessado via `get_instance()`.
+
+
+- Instalador dist/Instalador_SaaS_Assistente_PRO_v2.0.7.exe compilado com sucesso; manifesto release_v2.0.7.json. SHA-256 98eb2d9e35223cd340600fa990f786ad47fcf9e451b85f4cbde76d1f6dc45e2b. Versões anteriores preservadas; não instalado automaticamente nem publicado OTA.
+- 023 publicada e billing-api v14 ACTIVE. Postflight: função existe, anon/authenticated sem EXECUTE, service_role autorizado; endpoint refresh_payment_status sem autenticação respondeu 401 UNAUTHORIZED. Demais funções/Admin preservados.
+- Prévia offscreen com dados fictícios inspecionada: botão de consulta visível, sem corte. Regressão final: 93 Desktop, 17 SQL PGlite e 13 handler simulados aprovados. PostgreSQL real local e Deno check aprovados.
+- Uso: proprietário abre cobrança e escolhe Já paguei — consultar Mercado Pago; não cria novo PIX. Não exige pagar para teste. Aceite do instalador/consulta autenticada real ainda pendente, assim como concorrência financeira e entrega externa do webhook. Esta entrega não significa homologação financeira integral.
+
+
+## Recuperação publicada / Desktop 2.0.7 em preparação — 11/09/2026
+
+- Migração 023 aplicada com Success pelo painel do projeto hnwvtoiiuqagzmuqygkw; billing-api publicada por CLI após Deno check aprovado. Nenhuma cobrança foi consultada/paga/cancelada nesta publicação.
+- Migração e teste payment_recovery_real_postgres.sql aprovados no clone PostgreSQL real: proprietário, alvo, throttle, assinatura preservada e ACL. Fixtures revertidas e servidor local parado.
+- Tela agora oferece consulta manual pelo proprietário, mesmo quando a tentativa pendente não está pagável. Usa refresh_payment_status e depois recarrega resumo; não altera polling local de 15 segundos nem cria pagamentos. Mensagem de confirmação não promete desbloqueio de licença suspensa.
+- 93 testes v2 aprovados. Teste estático ajustado para incluir nova ação na lista ownerOnly. 17 testes SQL e 13 HTTP simulados aprovados na etapa anterior. Preparando instalador 2.0.7; ainda não distribuído.
+
+
+## Recuperação de status — backend local em preparação — 11/09/2026
+
+- Migração 023_v2_payment_status_recovery.sql e endpoint refresh_payment_status implementados somente localmente. Exigem proprietário ativo e tentativa ligada à conta; ID do provedor vem do banco, nunca do cliente. Conferência de ID e referência externa da resposta antes de aplicar a RPC financeira 020.
+- Campo last_provider_check_at e claim com bloqueio de linha limitam a consulta a uma por 30 segundos/tentativa entre workers; falha de consulta também consome intervalo. RPC restrita a service_role. Consulta GET não cria/cancela cobranças nem libera licença por declaração do cliente.
+- 17 cenários SQL PGlite aprovados, incluindo isolamento entre contas, acesso de proprietário, throttle sequencial e licença inalterada pelo claim. 13 testes VM do handler aprovados, incluindo recuperação, throttle, recusa de papel e identidade divergente. Dependências de autenticação/provedor/RPC simuladas no teste HTTP.
+- Trabalho incompleto: falta integração da tela, testes dessa interface, Deno check, validação da migração em PostgreSQL real e concorrência. NÃO publicado, NÃO ligado ao aplicativo instalado. Aplicar 023 antes de publicar endpoint; não apresentar como recurso já disponível.
+
+
+## Handler de webhook testado localmente — 11/09/2026
+
+- Nova suíte supabase/tests/billing_webhook.test.mjs: 9 testes aprovados. Executa o código atual do handler e helpers HTTP em VM Node 24, removendo tipos TypeScript; captura Deno.serve, sem abrir servidor. Fetch, autenticação e RPC simulados, HMAC-SHA256 real com segredo fictício.
+- Verificados: assinatura inválida/ID adulterado sem acesso ao provedor/banco; assinatura válida; valor/status/referência obtidos do provedor em vez do corpo não confiável; repetição encaminhada à RPC; falhas de rede, HTTP 503, banco e recusa da RPC retornam erro; autenticação ausente recusada.
+- Primeira execução: oito casos passaram e o caso de autenticação retornou 500 por diferença entre objetos Error da VM e do mock. Corrigido exclusivamente o harness compartilhando Error; repetição com nove casos aprovada. Nenhum código de produção modificado.
+- Limites: autenticação real e persistência SQL não são exercitadas nesta suíte; idempotência de licenças está na suíte PGlite separada (16 cenários aprovados anteriormente). Não comprova entrega externa do Mercado Pago, comportamento sob concorrência ou recuperação sem webhook.
+- Recuperação sem webhook ainda não implementada. Nenhuma cobrança real consultada, criada, paga ou cancelada. Sem publicação remota/novo instalador.
+
+
+## Testes financeiros locais — 11/09/2026
+
+- Executados 90 testes Python v2: todos aprovados. Executados 16 cenários financeiros em PGlite descartável: todos aprovados; suíte anterior tinha 15 cenários.
+- Novo cenário verifica PIX de R$ 350 com principal e adicional: ambos renovados, duplicata não altera novamente as licenças e licença de outra conta permanece integralmente preservada.
+- Também aprovados: cobrança antiga com máquina nova, substituição com mesma quantidade/preço, evento atrasado, valor inválido, bloqueio individual, snapshot imutável, tentativa legada e máquina adicionada após pagamento.
+- Limite: PGlite usa esquema reduzido e digest simulado; testes sequenciais das funções SQL, não entrega HTTP de webhook, criptografia real, concorrência ou homologação integral do provedor. Nenhuma chamada financeira remota, publicação ou alteração de licença real nesta execução.
+- Inspeção identificou pendência concreta: reconcileProvider consulta o provedor e aplica a RPC, mas é chamado pelo webhook. A consulta da tela carrega registros locais; não foi encontrado fluxo normal de recuperação de aprovação quando o webhook não chega. A consulta feita ao cancelar cobranças antigas não substitui essa recuperação.
+- Dependência de teste instalada por npm com ignore-scripts; package-lock gerado para repetibilidade. Teste ampliado em supabase/tests/payment_safety.test.mjs.
+- Relatos do usuário (não verificados remotamente nesta etapa): PIX antigo cancelado às 16:54; mantém principal e adicional; novo QR de R$ 350 gerado, sem confirmação de pagamento.
+
+
+## Entrega 2.0.6 — revisão Admin/interface — 10/09/2026
+
+- Instalador `dist/Instalador_SaaS_Assistente_PRO_v2.0.6.exe` compilado e manifesto conferido. SHA-256 `e1c5046824a844d0b890e30e3fcaca464299650ffa3dbe9717b5c338b1eb7ebc`. Não instalado automaticamente nem distribuído via OTA; instaladores anteriores preservados.
+- Cabeçalho corrigido e prévia visual inspecionada com dados fictícios. Avisos financeiros mais específicos sem mudança da lógica de pagamento. Admin 2.0.4 preservado/compatível, nenhuma função remota ou migração de produção alterada nesta etapa.
+- 90 testes v2, 39 testes direcionados sobrepostos e 19 testes de persistência/métricas/licenciamento/versionamento aprovados. Logs de erro nos testes de histórico corrompido eram esperados e usaram somente arquivos temporários.
+- Teste sequencial Admin em PostgreSQL real isolado aprovado. Nenhuma máquina real bloqueada/desbloqueada, nenhum PIX gerado/cancelado/pago. Usuário está verificando a cobrança no provedor.
+- Pendentes: aceite das telas 2.0.6, fechar/reabrir nos dois equipamentos, uso funcional real autorizado e concorrência (incluindo risco de ordem de locks documentado). Não apresentar esta revisão como homologação financeira completa.
+
+## Revisão Admin e usabilidade — 10/09/2026 — 2.0.6 em preparação
+
+- 39 testes direcionados Admin/MFA/interface aprovados. Teste PostgreSQL real no clone confirmou bloqueio/desbloqueio do adicional, principal preservado, mesma validade/assinatura e recusa de desbloqueio após vencimento. Fixtures desfeitas e servidor local encerrado; sem operação em equipamentos/cobranças reais.
+- Primeira execução falhou apenas na asserção de privilégio: o clone fora restaurado com --no-privileges. Migração 014 reaplicada exclusivamente no clone para reconstruir funções/permissões do Admin; teste seguinte aprovado. Isso não evidencia falha de permissões em produção.
+- Corrigido banner da Conta Empresarial: layout de texto tinha QSizePolicy Ignored sem stretch e perdia largura para um espaçador. Reprodução controlada mostrou largura anterior 0 e corrigida 870 pixels. Novo teste impede regressão.
+- Avisos de pagamento agora distinguem fatura paga, cancelamento registrado no sistema, expiração, rejeição e devolução. Tentativa não pagável sem motivo específico não afirma cancelamento no provedor. Nenhuma lógica de liberação ou geração de cobrança alterada.
+- Estes testes do Admin são sequenciais. Concorrência real permanece pendente; revisar especialmente ordem de locks da função admin_set_enterprise_device_status_server (instalação antes do trigger que bloqueia assinatura), em relação ao fluxo de pagamento 020 (assinatura antes de instalações).
+- Extração/relatórios/envios e fechamento/reabertura reais das duas máquinas ainda requerem aceite controlado. Não disparar mensagens para clientes reais.
+
+## Dois computadores na versão 2.0.5 — confirmação visual em 10/09/2026
+
+- Screenshot enviado pelo proprietário mostra principal e adicional com situação Ativo e versão 2.0.5. Últimos acessos exibidos: 16:50 e 16:52, respectivamente. Atualização e comunicação do adicional com o servidor confirmadas pela tela, mantendo dois vínculos.
+- Esta evidência não valida ainda operações funcionais completas no adicional, pagamento, webhook assinado ou concorrência financeira. Próximo passo: consultar a tela de cobrança sem gerar ou pagar nova cobrança, verificando a tentativa legada e os dados apresentados.
+
+## Conta Empresarial conferida pelo proprietário — 10/09/2026
+
+- Screenshots confirmam Conta Empresarial carregada com papel Proprietário, assinatura em teste gratuito, vigência exibida 11/09/2026, dois computadores e estimativa consolidada R$ 350,00.
+- Lista mostra principal ativo na versão 2.0.5 e adicional ativo, ainda registrado na versão 2.0.0-beta.1, com último acesso anterior. Isso confirma o cadastro do adicional, não seu funcionamento atual com a versão nova.
+- Próximo passo: atualizar o adicional para 2.0.5 preservando dados/credencial local, abrir e conferir atualização da versão/último acesso no principal. Não gerar vínculo duplicado nem remover instalação. Se pedir primeiro acesso, interromper para diagnóstico; recuperação 022 é exclusiva do principal.
+- Banner superior aparece sem identificação legível da conta nas imagens; registrar para revisão visual, sem causa confirmada. Nenhum pagamento autorizado/efetuado nesta conferência.
+
+## Abertura após recuperação confirmada — 10/09/2026
+
+- Proprietário confirmou: "Sistema abriu normal" após recuperar o principal na versão 2.0.5. Abertura da aplicação no equipamento real validada pelo usuário.
+- Próximo passo: conferir Conta Empresarial e vínculo do segundo computador. Abertura normal não comprova ainda cobrança, webhook ou concorrência; não orientar pagamento do QR antigo.
+
+## Recuperação do principal confirmada pelo proprietário — 10/09/2026
+
+- Proprietário informou "Deu certo" e enviou telas de confirmação do e-mail e "Acesso recuperado" na revisão 2.0.5. Fluxo autenticado de recuperação no equipamento real confirmado; abertura da tela principal/Conta Empresarial após fechar os avisos ainda não foi confirmada nesta etapa.
+- Antes da confirmação, diagnóstico somente leitura mostrou o equipamento correspondente cadastrado como principal, status active, billing_status active e proprietário ativo correspondente ao e-mail anteriormente informado. Nenhum vínculo, licença ou permissão foi alterado durante o diagnóstico.
+- Esclarecimento posterior do proprietário: na tentativa recusada, havia utilizado o login da outra máquina. O relato é consistente com a exigência de proprietário do principal; não comprova por si só o papel/permissão daquele outro usuário. A recuperação posterior foi realizada pelo usuário no aplicativo, não por intervenção direta no banco.
+- Permanecem pendentes homologação do segundo computador, concorrência financeira e confirmação válida do provedor. Não orientar pagamento de PIX antigo.
+
+## Entrega 2.0.5 — login e recuperação do principal — 10/09/2026
+
+- Instalador final `dist/Instalador_SaaS_Assistente_PRO_v2.0.5.exe` compilado com sucesso. SHA-256 `819ad327b5526ce80b7f1b40e85f2bcfb158652306fcab8bb0e925f64ee938a4`, manifesto `dist/release_v2.0.5.json` conferido. Versões anteriores preservadas; Admin 2.0.4 continua compatível.
+- Backend já publicado: migração 022/account-api v9. Testes locais (87 v2, Deno e SQL real) aprovados; postflight de permissões e HTTP 401 em produção aprovados. Telas inicial e login inspecionadas com serviços simulados; nenhuma credencial real fornecida/registrada nos testes.
+- Próximo passo do proprietário: instalar 2.0.5 no principal, escolher "Já tenho conta — Entrar", usar e-mail/senha existentes e confirmar OTP no aplicativo. Não criar outra conta nem informar senha/OTP no chat. Ainda falta aceite autenticado nesse hardware real; não afirmar recuperação concluída antes disso.
+- Não houve rotação de token de cliente real, nova licença, alteração de prazo, pagamento, instalação automática ou publicação OTA nesta etapa. Mantidas pendências anteriores de concorrência financeira e homologação com dois computadores.
+
+## Recuperação publicada — 10/09/2026
+
+- Migração 022 aplicada com conteúdo integral conferido no editor, retorno Success. Hash `e9c63542c9c68bae743718a0eea3a4061e1742cd73fdb0e8051112865defc5d3`. account-api v9 ACTIVE publicada pela CLI com dependências compartilhadas; demais funções preservadas.
+- Postflight: RPC existe, anon/authenticated sem EXECUTE e service_role autorizado. Endpoint recover_principal_access sem credenciais respondeu HTTP 401 UNAUTHORIZED. Nenhuma recuperação de cliente real foi executada.
+- Tela com botão de login inspecionada em renderização offscreen/serviços simulados. Regressão final 87 testes aprovada. Instalador 2.0.5 em compilação neste registro; Admin 2.0.4 não foi alterado nem recompilado.
+
+## Recuperação do computador principal — implementação 2.0.5 em andamento
+
+- Incluída entrada "Já tenho conta — Entrar" no primeiro acesso, reutilizando login com senha/recuperação de senha e confirmação OTP por e-mail. Novo endpoint account-api exige usuário autenticado e OTP de até 10 minutos.
+- Migração 022: RPC restrita a service_role, exige proprietário ativo e hardware já cadastrado como principal ativo; apenas rotaciona hash/token_issued_at, preservando licença, validade, assinatura, cobrança e bloqueios. Auditoria sem token e limite de uma recuperação bem-sucedida por minuto.
+- 87 testes v2, Deno check e teste OTP aprovados. PostgreSQL real isolado aprovou titular/hardware, recusa de outra conta, máquina adicional/bloqueada, rotação e preservação integral de licença/assinatura. Primeiro teste detectou campo created_at inexistente; corrigido para occurred_at antes de publicação. Fixtures revertidas e servidor local encerrado.
+- Ainda não publicado neste registro; próximo passo gerar 2.0.5 e publicar 022/account-api. Não instruir usuário a excluir conta, mudar e-mail ou reiniciar trial.
+
+## Entrega 2.0.4 CPF/CNPJ — 10/09/2026
+
+- Build final concluído após revisar os textos de pessoa física também na cobrança. Instalador `dist/Instalador_SaaS_Assistente_PRO_v2.0.4.exe`, SHA-256 `f73f28358f5648c2b74867ac3e3c2e7896a124185d23651c725a20ad4cac8f0b`; manifesto `dist/release_v2.0.4.json` conferido. Build intermediário 2.0.4 substituído; instalador 2.0.3 preservado.
+- Admin `dist_admin_v204/Gerador Admin - SaaS Assistente PRO.exe`, SHA-256 `37f1c9634b64497c4140ee6d4b7d90c4c055e22de9c7efcb5b955e969f6dd282`.
+- Migração 021 publicada com hash `3f07243db5275ec13110896f5a9acf46ac22dba0fcfb4bd6412e0930343736ef`; account-api v8/billing-api v13 ACTIVE, sem credenciais retornam HTTP 401 UNAUTHORIZED. Proteções 020 preservadas.
+- 83 testes v2 e 16 de Admin/versionamento aprovados; teste Deno de documentos e check das duas funções aprovados. SQL real ampliado passou para perfil de cobrança CPF, checksum inválido e proibição de repetir trial pelo mesmo usuário. Dados fictícios revertidos; PostgreSQL local encerrado.
+- Prévia offscreen da tela gerada com serviços simulados e fonte Segoe UI explícita, inspecionada sem corte dos campos CPF/nome. Isso não equivale a executar instalador/login reais; homologação de cadastro pelo proprietário é o próximo passo. CPF real deve ser informado somente no aplicativo, nunca no chat.
+- Nenhum pagamento, cadastro fictício de produção, atualização OTA ou instalação automática foi realizado. Homologação de pagamento/concorrência/duas máquinas e licenças comerciais de empacotamento continuam pendentes antes de distribuição geral.
+
+## CPF/CNPJ publicado no servidor — 10/09/2026
+
+- Migração 021 aplicada pelo SQL Editor, com conteúdo integral comparado ao arquivo local antes de executar. Retorno `Success. No rows returned`. Prévia: uma conta, nenhuma tentativa aprovada; nenhuma exclusão de dados.
+- account-api v8 e billing-api v13 publicadas pela CLI com módulos compartilhados. Ambas ACTIVE; account-api agora alinhada ao config.toml (verify_jwt=false no gateway, autenticação requireUser mantida no código). admin-api v9 e desktop-api v8 preservadas.
+- Postflight: validadores CPF/CNPJ verdadeiros, checksum inválido rejeitado, anon sem EXECUTE de onboarding; zero documentos legados inválidos nas unidades e perfis. Testes locais: 83 testes v2, 38 direcionados (sobrepostos), 1 teste Deno e check de duas funções aprovados; testes reais no clone aprovados. Um teste estático antigo exigia somente validCnpj e foi atualizado para o requisito CPF/CNPJ.
+- Revisão 2.0.4 em compilação para Desktop e Gerador Admin. Não confundir com o 2.0.3 anterior: ainda não usar o instalador antigo para CPF. Homologação autenticada pelo proprietário e em duas máquinas continua pendente.
+
+## Suporte CPF/CNPJ — 10/09/2026 — implementação local
+
+- Cadastro, validações Python/TypeScript/SQL, cobrança e exibição/busca Admin adaptados para CPF e CNPJ. A interface identifica automaticamente o tipo pelo documento; nomes técnicos legados preservados.
+- Migração 021 aplicada exclusivamente no clone `backup_verify2`: testes reais aprovados de CPF, CNPJ, checksum inválido, duplicidade entre usuários e bloqueio de RPC anônimo. Usuários e contas fictícios desfeitos com ROLLBACK; servidor local encerrado.
+- 38 testes direcionados aprovados. Regressão v2 e checagem Deno em andamento. Nenhuma alteração CPF/CNPJ publicada em produção e nenhum executável recompilado neste registro; instalador 2.0.3 ainda exige CNPJ.
+- Antes da disponibilização: concluir testes, aplicar 021 em produção, publicar account-api/billing-api e gerar nova revisão Desktop/Admin. Não orientar cadastro CPF pelo executável antigo.
+
+## Validação no clone PostgreSQL e preparação de duas máquinas — 10/09/2026
+
+- Migração 020 aplicada com ON_ERROR_STOP na base local `backup_verify2`, restaurada do backup pré-020, em PostgreSQL 17.11. Roles locais anon/authenticated/service_role preparadas como NOLOGIN; nenhuma alteração remota nesta etapa.
+- Verificações aprovadas: digest SHA-256 real de pgcrypto/extensions com vetor conhecido `abc`, presença da tabela de conciliação e negação de EXECUTE para anon na rotina de confirmação de pagamento. Isso não comprova ainda concorrência nem webhook válido.
+- PostgreSQL iniciado somente em 127.0.0.1:55432 e encerrado no finally. Primeira preparação de roles teve erro de sintaxe antes da migração; corrigida e execução seguinte concluída com COMMIT.
+- Proprietário confirmou segundo computador disponível. Próxima interação: abrir a versão 2.0.3 no principal e validar login/Conta Empresarial antes de gerar código e vincular o secundário. Não pagar PIX legado nem efetuar cobrança real para esse primeiro teste.
+- Mantidas pendências: comportamento autenticado de account-api (gateway difere da configuração local), testes concorrentes com duas conexões, webhook válido e homologação visual. Instalador continua restrito a teste controlado, sem distribuição geral/OTA.
+
+## Publicação coordenada concluída — 10/09/2026
+
+- Login oficial da CLI concluído pelo proprietário. Projeto confirmado pelo nome `saas-assistente-desktop-v2-prod` e referência `hnwvtoiiuqagzmuqygkw`.
+- CLI publicou `admin-api` versão 9 e `desktop-api` versão 8, incluindo `http.ts` e `security.ts`. `billing-api` republicada como versão 12 com `http.ts`, `security.ts` e `v2.ts` locais. As três constam ACTIVE e usam autenticação/verificação de assinatura no código, conforme config.toml.
+- Verificações HTTP em produção aprovadas: admin-api, desktop-api e billing-api responderam 401/UNAUTHORIZED sem credenciais; webhook sem assinatura respondeu 401/INVALID_SIGNATURE. Esses testes comprovam inicialização e rejeição de chamadas não autenticadas; não comprovam pagamento real ou fluxo autenticado completo.
+- Migração 020 e três funções da revisão implantadas. O bloqueio anterior de publicação foi resolvido. A hipótese de dependências ausentes no editor web não teve mensagem explícita do provedor; a CLI incluiu as dependências e confirmou sucesso.
+- Pendências de homologação: login nos executáveis 2.0.3, conta controlada/duas máquinas, webhook válido do Mercado Pago, conciliação da tentativa legada e concorrência real. Nenhum pagamento, cancelamento ou reembolso foi efetuado nesta etapa. Não anunciar homologação completa antes desses testes.
+- Observação de configuração: account-api versão 7 permanece com verify_jwt=true no gateway, diferente do config.toml local. Não foi alterada nesta publicação; validar o fluxo autenticado de Conta Empresarial antes da distribuição.
+
+## Implantacao parcial da seguranca 020 — 10/09/2026
+
+- Preflight de producao: 1 empresa, 1 assinatura, 1 fatura aberta, 1 tentativa pendente, nenhuma tentativa aprovada; migrations 018/019 presentes e pgcrypto no schema `extensions`.
+- Migração local exata `020_v2_payment_snapshot_safety.sql` (SHA-256 `96462C726CD149BFE7D354CCD29729902F5A02C73B4E22BD8F5F8D5A30DC0E79`) aplicada pelo SQL Editor ao projeto `hnwvtoiiuqagzmuqygkw`; painel retornou `Success. No rows returned`.
+- Postflight aprovado: tabela de conciliacao e duas colunas novas presentes; wrappers e helpers internos presentes; `anon` sem execução do webhook RPC e `service_role` sem execução do helper 019. Zero casos de conciliacao abertos.
+- Existe 1 tentativa pendente legada sem snapshot. Ela permanece registrada, mas o wrapper 020 impede renovacao automatica por pagamento legado e encaminha recebimento para conciliacao. Nenhum cancelamento ou reembolso foi efetuado.
+- `billing-api` publicada pelo painel e confirmada com `Successfully updated edge function`; inclui snapshot, ocultacao de QR nao pagavel e notification_url do PIX.
+- `admin-api` e `desktop-api` foram carregadas e comparadas byte a byte com os arquivos locais (desconsiderando CRLF), mas o editor web nao publicou. Causa operacional: seus bundles atuais exibem apenas `index.ts`, enquanto o codigo local importa `../_shared/http.ts` e `../_shared/security.ts`; a billing-api ja possuia esses arquivos no bundle.
+- Proximo passo: autenticar a CLI local pelo fluxo oficial do Supabase e publicar `admin-api` e `desktop-api` a partir da pasta v2, preservando os modulos compartilhados. Até isso ocorrer, o Desktop/Admin 2.0.3 nao deve ser distribuido e o backend deve ser considerado em implantacao parcial.
+
+## Backup pre-020 validado — 10/09/2026
+
+- Backup logico finalizado em `private_db_backups/pre020_20260910_064805_823dfc54/database.dump`: 433.846 bytes, 749 linhas de catalogo, SHA-256 `37A93AEA415AC16CFDB1B64B80EE5D9696489DD5E3A90989E2632511CFAA8071`.
+- O arquivo foi restaurado em PostgreSQL 17.11 local e isolado com schemas `auth` e `public`: 23 e 21 tabelas, respectivamente; 1 empresa, 1 assinatura, 2 usuarios Auth e zero FKs publicas nao validadas. O servidor local de teste foi encerrado.
+- O dump cobre banco logico, mas nao arquivos fisicos do Storage, secrets, configuracoes do painel ou codigo Edge. Esses itens permanecem protegidos pelo codigo local/versionamento e inventario de configuracao; nenhuma credencial foi gravada.
+- Pre-condicao de backup para a migracao 020 atendida. Proximo passo autorizado: inventario agregado de cobrancas pendentes, aplicacao da migracao e publicacao coordenada das funcoes.
+
+## Correcao da validacao local do arquivo — 10/09/2026
+
+- A nova tentativa superou TLS e autenticacao e concluiu o pg_dump, mas o script passou `--file=(Join-Path ...)` incorretamente ao pg_restore; a falha foi posterior ao backup e nao alterou o servidor.
+- Argumentos nativos de pg_dump/pg_restore agora sao arrays explicitos e o arquivo de catalogo tem caminho calculado previamente. A copia `pre020_20260910_064805_823dfc54` sera validada e finalizada, se integra, sem pedir novamente a senha.
+
+## Correcao TLS do backup manual — 10/09/2026
+
+- Duas tentativas do proprietario falharam antes da leitura com `SSL: certificate verify failed`; os arquivos `database.partial.dump` resultantes nao sao backups validos.
+- Causa confirmada na documentacao oficial: `sslmode=verify-full` requer o CA do Supabase, e `sslrootcert=system` nao validou a cadeia neste cliente Windows.
+- Certificado publico `prod-ca-2021.crt` obtido do link exibido em Database Settings do projeto, inspecionado como `Supabase Root 2021 CA`, valido ate 26/04/2031. SHA-256 do arquivo: `700723581420DD1AC98FD7E9AC529F0EF210EADCAF87FC868A3AD7D114C2F3B7`.
+- Script corrigido para exigir esse certificado e seu hash, continuar em `verify-full` e desabilitar apenas negociacao GSS (nao TLS). Nova execucao interativa ainda necessaria; migracao e funcoes continuam nao publicadas.
+
+## Preparacao do backup manual — 10/09/2026
+
+- Proprietario confirmou conhecer a senha do banco; nao foi solicitada nem recebida no chat.
+- Parametros do session pooler conferidos no painel Connect do projeto v2. Preparado `supabase/backup_v2_interactive.ps1`, com prompt nativo oculto de senha, TLS verify-full e destino local `private_db_backups/` excluido do Git e com ACL restrita ao usuario/SYSTEM.
+- O script executa somente pg_dump e verificacao de catalogo/hash, sem migracao ou restauracao remota. Qualquer erro deixa arquivo marcado como parcial e interrompe o fluxo.
+- Sintaxe PowerShell validada; modo `-CheckTools` aprovado com pg_dump/pg_restore 17.11 oficiais da EDB. Exclusao de `private_db_backups/` confirmada por git check-ignore.
+- Backup ainda depende da execucao interativa pelo proprietario e de teste posterior de restauracao isolada. Dump logico nao inclui arquivos fisicos do Storage, secrets ou configuracoes Edge. Implantacao permanece pendente.
+
+## Início da implantação autorizada — 09/09/2026
+
+- Proprietário autorizou aplicar a revisão 2.0.3 em produção.
+- Painel autenticado confirmou projeto `saas-assistente-desktop-v2-prod`, referência `hnwvtoiiuqagzmuqygkw`, status Healthy.
+- Verificação prévia encontrou impedimento: painel Database Backups informa que o plano Free não inclui backups; não há backup disponível no painel. CLI também está sem autenticação (`Access token not provided`).
+- Nenhuma migração ou função foi publicada nesta etapa. É necessário obter backup lógico recuperável por conexão PostgreSQL autorizada ou comprovar backup externo recente antes de alterar o banco. Não foi contratado upgrade nem criada credencial.
+
+## Revisão de segurança da cobrança e do Admin — 09/09/2026 — concluída localmente; implantação pendente
+
+Registro final desta revisão (substitui os estados intermediários abaixo):
+
+- Desktop 2.0.3 e Gerador Admin compilados com sucesso. Instalador em `dist/Instalador_SaaS_Assistente_PRO_v2.0.3.exe`; Admin em `dist_admin_v203/Gerador Admin - SaaS Assistente PRO.exe`. Não foram instalados, publicados nem homologados com duas máquinas reais.
+- SHA-256 instalador: `baaf3701b1c8328680770ad8ac7358d03f616042e6bb543a533b32626dc89246` (confere com `dist/release_v2.0.3.json`). Admin: `5c3f5bc49cc03988876021b38ee3262e370b151f415476cdc85240b31e36fb89`.
+- 179 testes Python aprovados; 15 grupos de cenários PostgreSQL/PGlite aprovados, incluindo confirmação de reembolso que bloqueia o período devolvido; as três funções Edge alteradas passaram no Deno check final.
+- PIX novo informa explicitamente a URL de webhook da billing-api. Conferir eventos Payments e Orders e assinatura no provedor durante implantação; nenhum ajuste remoto foi realizado.
+- Roteiro de implantação e critérios de aceite em `supabase/DEPLOY_SECURITY_020.md`. A proteção no servidor depende da migração 020 e publicação das funções. Não distribuir como versão homologada antes dessas etapas.
+- O build reportou PyArmor trial/non-profits e Inno Setup non-commercial. Verificar licenças adequadas ao uso comercial antes de distribuir; compilação bem-sucedida não comprova conformidade dessas ferramentas.
+
+- Base local identificada como 2.0.2; instalador existente confere com o manifesto. As mudanças desta revisão ainda não estão nesse instalador nem foram publicadas.
+- Migração 020 preparada com identidade dos computadores por cobrança, snapshot imutável por tentativa, bloqueio transacional por empresa, proteção contra notificações atrasadas e fila de conciliação sem renovação automática de pagamentos divergentes.
+- Cobranças antigas sem snapshot não recebem uma composição presumida: pagamentos nessas condições exigem conferência. Atualização de código local não modifica QR codes já emitidos no provedor.
+- Configuração local da billing-api explicitada. Testes de versão deixaram de exigir o beta antigo. Tela de cobrança em revisão para ocultar resultados inválidos e consultar status.
+- Validação em banco isolado e revisão das ações do Gerador Admin em andamento. Não considerar estas mudanças homologadas ou implantadas até o registro final desta seção.
+- Primeira validação local: 175 testes Python aprovados e 11 cenários executados em PostgreSQL/PGlite descartável. Incluem QR antigo com nova máquina, substituição mantendo quantidade, evento repetido/atrasado, reembolso, preservação de bloqueio, snapshot imutável, restrição de permissões e ativação posterior ao pagamento. A fixture simula digest apenas para verificar resolução do schema; não substitui o teste do pgcrypto e de concorrência no Supabase.
+- Admin revisado: ajuste individual de envios deixa de enviar renovação automática; preço/vigência empresariais são alterados na conta; erros de salvamento liberam o botão para tentar novamente; valores zero preservados; painel de pagamentos em conferência preparado.
+- PIX legado por instalação bloqueado na desktop-api v2. A cobrança empresarial permanece o caminho autorizado. A versão 1.9.6 tem backend próprio e não foi alterada.
+- Validação ampliada: 179 testes Python aprovados e 15 cenários PostgreSQL/PGlite aprovados; Deno validou billing-api/admin-api/desktop-api. Proteções adicionais cobrem alteração de preço, registro tardio de cobrança e revalidação do emissor de código.
+- Build de revisão 2.0.3 em preparação. Migração, funções e distribuição continuam pendentes; nenhum PIX de produção foi cancelado nem pagamento real efetuado nesta revisão.
+
+## Limites por máquina e conversa correta — 04/09/2026
+
+- Gerador Admin existente iniciado para o proprietário renovar a assinatura; nenhuma licença foi alterada pelo agente.
+- Identificado defeito na lista: linhas sem `ItemIsSelectable`, embora a conversa usasse `currentItem()`. Corrigido localmente. Relato da 1.9.4 não foi reproduzido nessa versão histórica.
+- Navegação de conversa agora usa `setUrl`, interrompe timer anterior e invalida callbacks antigos de envio. O envio exige carregamento da URL esperada e texto esperado no compositor; seletores restritos ao rodapé do chat. Ainda exige teste real de troca A/B, mesma conversa e SSI antes da distribuição.
+- Migração local 016 adiciona `daily_message_limit` opcional (padrão 6 trial/30 demais) e `batch_limit` padrão 1, ambos limitados a 1–1000. Admin valida e edita os valores por instalação. Desktop lê as cotas do servidor, valida o tamanho da seleção antes de iniciar e mantém envio sequencial.
+- 15 testes direcionados aprovados (licenciamento, contratos Edge, navegação e callbacks). Sem teste real de mensagens e sem novo build nesta etapa.
+- Pendente: aplicar migração 016, publicar admin-api/desktop-api e gerar novos executáveis coordenadamente no projeto v2. Não publicar antes de revisar contagem pós-envio (legada), callbacks SSI pendentes e validação real do destinatário. A conferência da URL/texto não prova isoladamente a identidade do chat se o WhatsApp mantiver estado inesperado.
+- Template Magic link or OTP salvo e conferido após recarregar o Supabase; teste integrado de salvamento de cobrança com OTP ainda pendente.
+- Teste integrado de confirmação empresarial por e-mail concluído pelo proprietário em 04/09/2026: o OTP foi aceito, a sessão autorizou a operação protegida e os dados de cobrança permaneceram salvos após o fluxo. Etapa aprovada.
+- Migração 016 aplicada no projeto v2 com `Success. No rows returned`. `admin-api` e `desktop-api` foram republicadas; o painel mostrou atualização recente e ambas recusaram requisição sem autenticação com HTTP 401.
+- Suíte completa após limites e correção de conversa: **126 testes aprovados**. Builds isolados gerados: Gerador Admin com 32.803.009 bytes, SHA-256 `B86020E4C0F5594FDCFE456B778C7215202A7C31ACA33CC6494B3BF45E9DAC6A`; Desktop com 193.217.350 bytes, SHA-256 `FBD5A1C396D15B6059FD1DCC034EB685E4E409467DEC1E2B072E7E70F08E75DC`.
+- Pendente somente validação integrada: fechar o Gerador/Desk antigo antes de abrir os novos builds, definir cotas numa licença e testar troca A→B→A e lote com contatos controlados. Não usar clientes reais nessa validação.
+- Revisão visual da Conta Empresarial: o banner azul estava absorvendo espaço vertical livre e esticando o selo de perfil. Banner fixado em 112 px, conteúdo centralizado e selo com política vertical fixa. 13 testes direcionados aprovados. Novo Desktop de teste: 193.216.309 bytes, SHA-256 `8E6717C1C8C3ECD1BAA4347ED8E372D6BEF389DB2F6D2D0D29F7D4368602EA56`.
+- Revisão da contagem de envios concluída em 05/09/2026: a migração 017 cria reservas atômicas por mensagem, desconta a cota antes do clique no WhatsApp e confirma ou devolve o consumo conforme o callback. Isso impede estouro de limite entre instâncias simultâneas.
+- Migração 017 aplicada no projeto Supabase v2 com sucesso e `desktop-api` republicada com as ações `reserve_message`, `confirm_message` e `release_message`. O painel confirmou `Successfully updated edge function`; a chamada sem autenticação retornou HTTP 401, comprovando inicialização e proteção do endpoint.
+- Suíte completa após as reservas: **134 testes aprovados**. Ainda falta o teste visual A→B→A e o lote com números controlados antes de liberar esta beta.
+- Beta com reservas gerado em `dist_desktop_v2_reservation_test/SaaS Assistente PRO 2.0 - Teste.exe`, com **193.219.627 bytes** e SHA-256 `715A0A8E8D01FD378FB7D433F9A83B154EB20A482E1F0CB64303C0C0C815E5F1`.
+- Na primeira abertura imediatamente após o deploy, o Desktop exibiu vínculo não autorizado. A consulta diagnóstica subsequente confirmou o mesmo hardware, sessão local presente e licença `active`; na segunda abertura o aplicativo permaneceu em execução normalmente. Tratar como evento transitório pós-publicação, sem recriar ou apagar o vínculo.
+- Validação real A→B→A aprovada pelo proprietário em 05/09/2026: o WhatsApp passou a trocar corretamente entre Janete e Francisco. Foi detectada uma inconsistência apenas no indicador superior, que ainda exibia o nome anterior.
+- A lista agora usa azul forte, borda e texto branco para a linha ativa, explica a diferença entre destaque e caixas marcadas e renomeia a ação para `Conversar com o Destacado`. O indicador superior é atualizado em todos os caminhos TSI/SSI e callbacks atrasados de fichas SSI antigas são ignorados por geração.
+- Suíte completa: **137 testes aprovados**. Prévia conjunta em `dist_desktop_v2_selection_status_test/SaaS Assistente PRO 2.0 - Teste.exe`, com **193.220.935 bytes** e SHA-256 `99FD16352B987E72FAC285DBAA3C15C2811ECAC97CCB3F1A10DB127A7FD58324`.
+- Segurança do lote revisada: a legenda e o botão mostram a quantidade efetivamente marcada; lotes com mais de um destinatário exigem confirmação com quantidade e nomes antes de consultar o WhatsApp. Cancelar limpa a fila temporária, não abre o motor e não reserva/consome mensagens.
+- Suíte completa após a confirmação do lote: **139 testes aprovados**. Prévia em `dist_desktop_v2_batch_confirmation_test/SaaS Assistente PRO 2.0 - Teste.exe`, com **193.221.328 bytes** e SHA-256 `F1CA6D4CFD2CB810002A2114131503DF98CE218CFADB7B21030B79363F6BE4D9`.
+
 ## Sistema principal
 
 O projeto Desktop possui implementação funcional em PyQt6, com módulos para interface, extração myHonda, processamento local, dashboards, WhatsApp Web, licenciamento, atualização e geração de instaladores.
@@ -271,3 +533,163 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Criada a migração corretiva `012_v2_onboarding_pgcrypto_search_path.sql` e atualizado o SQL-base da migração 011. O ajuste foi aplicado com sucesso no projeto v2 sem remover ou alterar cadastros existentes.
 - Após repetir a operação, o servidor criou a empresa e o computador principal com trial. A verificação somente leitura confirmou sessão do usuário, token de instalação protegido, uma associação empresarial e papel `owner`.
 - O redirecionamento visual para `localhost:3000` após clicar no e-mail ainda deve ser substituído por uma experiência de confirmação mais amigável antes do beta público.
+
+## Painel empresarial, MFA e computador adicional — 02/09/2026
+
+- Criada a tela **Conta Empresarial** no Desktop 2.0, com empresa, papel do usuário, assinatura, quantidade de computadores, valor consolidado, vigência, unidades/CNPJs e instalações vinculadas.
+- O painel é responsivo e utiliza rolagem vertical própria. Em janela de 900 × 560 o conteúdo completo permanece acessível, sem corte ou rolagem horizontal.
+- Proprietários e administradores podem gerar código descartável de computador adicional e programar/cancelar remoção. Operadores possuem somente leitura.
+- Integrado o fluxo TOTP oficial do Supabase: listagem de fatores verificados, cadastro por QR code, desafio de seis dígitos e persistência DPAPI da nova sessão AAL2. Senha, código e segredo MFA não são gravados pelo Desktop.
+- As mutações do painel repetem a operação somente depois da confirmação MFA bem-sucedida; o servidor continua validando o `aal` diretamente no JWT.
+- Identificada e corrigida localmente uma lacuna no resgate do código: o computador adicional agora recebe licença de compatibilidade com a vigência e o preço adicional da assinatura, herdando links/avisos do computador principal. Assinaturas inativas ou vencidas não podem gerar nem resgatar novos vínculos.
+- Criada a migração idempotente `013_v2_additional_device_license.sql`; a migração 010 e a `account-api` também foram atualizadas para instalações limpas.
+- Validação local final desta etapa: **80 testes automatizados aprovados** e compilação Python aprovada.
+- Migração 013 aplicada com sucesso no projeto Supabase v2 `saas-assistente-desktop-v2-prod` (`hnwvtoiiuqagzmuqygkw`) em 02/09/2026; o SQL Editor confirmou `Success. No rows returned`.
+- `account-api` republicada no mesmo projeto com a validação de assinatura ativa antes de gerar código de vínculo; o Supabase confirmou `Successfully updated edge function`.
+- O teste físico em um segundo computador foi adiado por indisponibilidade de outra máquina. Ele permanece obrigatório antes do beta público, mas não bloqueia as etapas locais seguintes.
+
+## Recuperação segura de senha — 02/09/2026
+
+- O botão **Esqueci minha senha** agora abre uma janela completa, em vez de apenas solicitar o e-mail e encerrar o fluxo.
+- O usuário solicita o código, informa os seis números recebidos e cadastra/confirma a nova senha dentro do Desktop.
+- A sessão de recuperação é temporária e não libera o sistema automaticamente. Código, senha e token temporário não são persistidos; os campos sensíveis são apagados ao concluir ou falhar.
+- A troca é feita diretamente pelos endpoints oficiais do Supabase Auth, e a sessão local anterior é removida após a alteração.
+- Validação local: **85 testes automatizados aprovados** e compilação Python aprovada.
+- O projeto Supabase v2 passou a usar SMTP personalizado da Brevo no plano gratuito, com remetente individual verificado. A credencial SMTP foi informada diretamente no painel pelo proprietário e não foi compartilhada nem registrada no repositório ou nesta memória.
+- Os templates **Confirm signup** e **Reset password** foram personalizados para exibir `{{ .Token }}` como código de seis números, eliminando a dependência do redirecionamento visual para `localhost:3000` nesses fluxos.
+- O teste real de recebimento e consumo do código de recuperação permanece pendente e deve ser executado no Desktop 2.0 antes do beta.
+- A configuração sem domínio próprio é provisória para desenvolvimento. Antes da distribuição pública, deve-se adquirir e autenticar um domínio de envio com SPF, DKIM e DMARC para melhorar identidade e entregabilidade.
+- A primeira tentativa real foi aceita pelo Supabase, porém não chegou ao destinatário. No chamado **#5540512**, a Brevo confirmou que a plataforma transacional já estava ativa e identificou divergência de grafia entre o remetente verificado e o campo `Sender email` do Supabase. O proprietário corrigiu o remetente copiando o endereço validado; o código passou a ser entregue.
+- O projeto Supabase v2 emitiu OTP de **8 dígitos**. O Desktop deixou de presumir tamanho fixo e agora aceita códigos numéricos de 6 a 10 dígitos, faixa suportada pelo Supabase, tanto na confirmação do cadastro quanto na recuperação de senha.
+- O teste com uma conta protegida por TOTP retornou corretamente `INSUFFICIENT_AAL`: o código recebido por e-mail cria uma sessão AAL1 e o Supabase exige AAL2 para trocar a senha de quem possui MFA. A recuperação agora detecta fatores TOTP verificados, solicita o código atual do aplicativo autenticador, eleva apenas a sessão transitória e então altera a senha. Contas sem MFA mantêm o fluxo em uma etapa.
+- Código de e-mail, código TOTP, senha e sessão transitória não são persistidos. Falhas registram somente o código técnico sanitizado para diagnóstico.
+- Após as correções de OTP e MFA: **17 testes direcionados** e **90 testes automatizados completos** aprovados; compilação dos módulos alterados aprovada.
+- Teste integrado real concluído em 02/09/2026: solicitação pelo Desktop, entrega via Supabase/Brevo, validação do OTP de 8 dígitos, detecção de MFA, desafio TOTP, elevação transitória para AAL2 e alteração da senha confirmada pelo servidor. O usuário recebeu a mensagem **Senha alterada**.
+
+## Gestão empresarial no Gerador Admin 2.0 — 02/09/2026
+
+- Criada localmente a área independente **Empresas 2.0** no Gerador Admin, sem substituir as telas legadas necessárias durante a transição.
+- A nova grade apresenta empresa, unidade/CNPJ, computador, classificação principal/adicional, acesso, assinatura, vigência, total consolidado e quantidade de usuários ativos. A busca aceita empresa, CNPJ ou identificador do computador.
+- A edição da assinatura possui botão fixo **Salvar alterações** e permite ajustar status, mensalidade principal, valor por computador adicional e vigência. O total segue a regra já aprovada: R$ 300,00 pela primeira vaga faturável e R$ 50,00 por vaga adicional; bloqueio operacional continua faturável até a remoção efetiva.
+- Criada a migração local `014_v2_admin_enterprise_management.sql`. Ela atualiza assinatura e licenças de compatibilidade numa única transação, sem alterar tokens, e registra a operação em `audit_events`.
+- O Gerador pode bloquear ou liberar somente o computador selecionado. A operação não altera os demais computadores nem cancela uma remoção adicional já programada. Uma assinatura inativa ou vencida impede a liberação indevida.
+- As novas mutações da `admin-api` permanecem protegidas pela validação administrativa e MFA já existente. As funções SQL revogam acesso de `public`, `anon` e `authenticated`, concedendo execução apenas à `service_role`.
+- Validação local: sintaxe Python aprovada, `git diff --check` sem erros e **36 testes administrativos/contratuais aprovados**, incluindo cálculo consolidado, proteção das RPCs, auditoria e mensagens de erro.
+- **Ainda não implantado:** a migração 014 não foi executada e a `admin-api` não foi republicada no projeto Supabase v2. O Gerador novo não deve ser aberto contra a função antiga antes dessas duas publicações coordenadas.
+
+### Implantação e executável de teste — 02/09/2026
+
+- Migração 014 aplicada no projeto isolado `saas-assistente-desktop-v2-prod`; o SQL Editor confirmou **Success. No rows returned**.
+- Verificação somente leitura encontrou as duas RPCs empresariais. `service_role_execute=true`, `authenticated_execute=false` e `anon_execute=false` em ambas.
+- `admin-api` republicada pelo editor do Supabase como pacote autônomo; o painel confirmou **Successfully updated edge function**. A publicação não alterou empresas, assinaturas ou computadores.
+- Criado ambiente de compilação isolado em `.admin_build_deps`, sem usar nem alterar o ambiente da versão 1.9.6.
+- Testes administrativos/contratuais repetidos antes do build: **36 aprovados**.
+- Executável de teste gerado em `dist_admin_v2/Gerador Admin - SaaS Assistente PRO.exe`, com **32.443.122 bytes** e SHA-256 `5B788C97CD3C0680A73225976F66B26C0170C485A60057E9FFB3EDBCF76D336D`.
+- O executável foi iniciado para o teste integrado. O usuário ainda precisa concluir o login com senha e MFA e confirmar que a área **Empresas 2.0** carregou corretamente.
+- Na primeira tentativa, o Supabase retornou `BOOT_ERROR`. O editor havia anexado o pacote novo ao código anterior, criando três imports e três chamadas `Deno.serve`; portanto, a falha não estava nas credenciais nem no MFA.
+- O conteúdo foi substituído integralmente e republicado com uma única importação e uma única chamada `Deno.serve`. Teste HTTP sem credenciais passou de `503 BOOT_ERROR` para `401 {"error":"UNAUTHORIZED"}`, comprovando que a função inicia e rejeita corretamente acesso não autenticado.
+- O usuário repetiu a validação pelo executável e confirmou que o login administrativo com senha e MFA foi concluído com sucesso. A integração Gerador → Auth → MFA → `admin-api` está aprovada.
+- A área **Empresas 2.0** foi validada visualmente no executável corrigido: CNPJ completo, estados em português, total consolidado e rodapé singular/plural foram exibidos corretamente.
+- A janela **Editar assinatura** apresentou status, mensalidade principal, valor por computador adicional, vigência e os botões fixos **Salvar alterações** e **Cancelar**, sem cortes.
+- A confirmação de bloqueio identificou o computador selecionado e informou que a assinatura e as demais máquinas não seriam alteradas. O bloqueio não foi confirmado, preservando a única máquina ativa do teste.
+- Com essa conferência, a implementação e a validação visual da gestão empresarial no Gerador Admin 2.0 estão concluídas. O próximo bloco funcional é a fatura consolidada com PIX e boleto em ambiente de teste.
+
+## Cobrança consolidada PIX e boleto — 02/09/2026
+
+- Criada a migração `015_v2_consolidated_billing.sql`, com preparação atômica da fatura empresarial, tentativa idempotente por meio de pagamento, registro da Order do Mercado Pago e aplicação transacional do pagamento confirmado.
+- O valor da fatura é congelado por período com a regra da assinatura empresarial. PIX e boleto são tentativas da mesma fatura, e cliques repetidos reutilizam a tentativa pendente do mesmo método.
+- A renovação ocorre somente para Order com `status=processed` e `status_detail=accredited`, após conferência do identificador externo e do valor exato. A operação atualiza fatura, assinatura e licenças de compatibilidade numa única transação e é idempotente.
+- Criada a Edge Function `billing-api`, baseada na API de Orders atual do Mercado Pago. O Access Token é lido exclusivamente do segredo `MERCADO_PAGO_ACCESS_TOKEN`; nenhuma credencial foi incluída no código ou no executável.
+- O webhook valida HMAC SHA-256 pelos cabeçalhos `x-signature` e `x-request-id`, consulta a Order diretamente no Mercado Pago e somente então chama a RPC de conciliação. A chave `MERCADO_PAGO_WEBHOOK_SECRET` foi cadastrada diretamente nos segredos da função, sem ser exibida ou registrada no repositório.
+- A Conta Empresarial recebeu acesso à janela de cobrança, com dados fiscais/endereço, geração de PIX ou boleto, código copiável, abertura da página de pagamento e botões fixos. Somente o proprietário pode salvar dados ou gerar cobrança; demais perfis podem consultar.
+- Migração 015 aplicada com sucesso no projeto Supabase v2; o SQL Editor respondeu **Success. No rows returned**. A `billing-api` foi publicada e a verificação JWT legada foi desativada apenas nessa função, mantendo autenticação própria para usuários e HMAC para o webhook.
+- A URL do webhook foi cadastrada no Mercado Pago para eventos de **Orders**. A etapa guiada do portal do provedor já havia sido marcada manualmente como testada; isso não substitui nem bloqueia o teste integrado pelo Desktop.
+- Foi criado um runtime de teste isolado em `.desktop_test_deps`, sem alterar o ambiente da versão 1.9.6. Os **37 testes direcionados** de autenticação, Conta Empresarial, janela de cobrança, contratos Edge, regras empresariais e isolamento de armazenamento foram aprovados; `deno check` também foi aprovado. O webhook sem assinatura retornou HTTP 401.
+- Corrigido o caminho de dados locais da versão 2.0 para `%APPDATA%\\SaasAssistentePRO-v2`. Os dados necessários foram copiados uma única vez de `%APPDATA%\\SaasAssistentePRO`, preservando integralmente a pasta da versão estável.
+- A primeira tentativa de abertura do executável revelou que `beautifulsoup4`, já usada pela tela de extração, não constava em `requirements.txt`. A dependência foi declarada e instalada somente no runtime isolado; a importação do módulo principal foi verificada antes de um novo build limpo.
+- Executável corrigido para o teste integrado gerado em `dist_desktop_v2_billing_test/SaaS Assistente PRO 2.0 - Teste.exe`, com **192.287.773 bytes** e SHA-256 `92B9F2B4FC71454B581DDCE224C927FA9CB781B93FEA84733214A56C4FC45F54`.
+- O executável corrigido foi iniciado e permaneceu em execução após a verificação inicial. Pendente: validar visualmente a janela de cobrança e depois gerar uma Order de teste, sem pagamento real, para confirmar a integração ponta a ponta.
+- A validação visual seguinte encontrou três heranças da versão estável: título ainda em `1.9.6`, atalho legado **Loja PIX (Recarga)** e erro genérico da Conta Empresarial quando não havia sessão de usuário após uma recuperação de senha.
+- A identidade do beta foi atualizada para `2.0.0-beta.1`; o atalho e a instrução do PIX legado foram removidos. PIX e boleto permanecem somente no fluxo novo de cobrança consolidada da Conta Empresarial.
+- A ausência de `supabase_user.dat` na pasta isolada confirmou a causa do erro da Conta Empresarial. A tela agora abre um diálogo seguro de login quando necessário, permite recuperação de senha e volta a carregar a empresa após autenticar. A senha é mascarada, nunca persistida e apagada do diálogo ao concluir ou falhar.
+- Após a correção, sintaxe Python e **43 testes direcionados** foram aprovados. Novo executável: **192.294.461 bytes**, SHA-256 `89684C322C00BE94E30AAE353031DDB77A81C989B354C45CAB73B478882018A7`. Ele foi iniciado e permaneceu em execução para nova validação visual.
+- A validação seguinte autenticou `berg.suportetr@gmail.com`, mas a `account-api` devolveu zero vínculos. Consulta somente leitura no projeto confirmou que esse usuário existe sem empresa e que **Grupo Ipe Motos** pertence ao usuário proprietário `berg.araujo.ice@gmail.com`; nenhum cadastro foi modificado.
+- Quando o login existe, mas não possui vínculo empresarial, a tela agora informa explicitamente que o e-mail não está cadastrado em nenhuma conta empresarial e oferece entrar com outro e-mail. A troca remove somente a sessão local daquele login e reabre o diálogo seguro.
+- A revisão passou em **44 testes direcionados**. Executável aberto para reteste: **192.293.958 bytes**, SHA-256 `550C4C6D14B35898D3EAC3301755C870CD115D6E9ECCC953652264D7C8EA70EE`.
+- O proprietário recuperou/acessou a conta correta e a Conta Empresarial foi validada visualmente no beta: Grupo Ipe Motos, papel Proprietário, CNPJ formatado, uma máquina principal ativa, mensalidade consolidada de R$ 300,00, vigência e versão `2.0.0-beta.1` carregaram corretamente. A rolagem vertical expôs toda a página e o botão **Abrir cobrança e pagamentos** permaneceu acessível.
+- A primeira inspeção da janela de cobrança confirmou rolagem e rodapé fixo, mas mostrou ausência do valor antes da geração, campos sem reaproveitar empresa/CNPJ, rótulos com borda herdada e ações de resultado pouco claras.
+- A janela revisada agora exibe **Valor previsto da próxima fatura**, pré-preenche nome empresarial e CNPJ a partir do resumo já autorizado, mantém os demais dados fiscais para confirmação do proprietário, remove bordas indevidas dos rótulos e apresenta **Copiar código**/**Abrir pagamento** com estado desativado visível até existir uma cobrança.
+- Sintaxe e **46 testes direcionados** aprovados após a revisão visual. Executável aberto: **192.295.933 bytes**, SHA-256 `E106DFBA8ACBEB8684A697A7F9C1D2B2B936125AD0196023073D967872E22F57`.
+- No primeiro salvamento real do perfil de cobrança, a conta proprietária ainda não possuía fator MFA verificado. O cadastro tentou renderizar o novo QR TOTP por `PIL.ImageQt` e gerou `AssertionError` somente no executável empacotado, encerrando o aplicativo.
+- A renderização do QR foi substituída por PNG em memória carregado diretamente pelo `QPixmap`, removendo a ponte incompatível do Pillow. Callbacks de apresentação do MFA agora capturam falhas e exibem mensagem, sem deixar a exceção encerrar o processo.
+- O teste automatizado renderizou um QR TOTP válido e a suíte direcionada passou com **47 testes**. Executável corrigido aberto: **192.294.405 bytes**, SHA-256 `DA682E6923A438A450165F02FAE0FED92B0C2E23322B7E51CAE7CE8C1D241055`.
+- Após decisão de produto, o TOTP foi removido das operações empresariais do cliente. Alterações protegidas agora solicitam OTP ao e-mail da própria sessão, recusam troca de identidade e aceitam somente autenticação `otp` emitida nas últimas 12 horas. Códigos e e-mails não são persistidos localmente.
+- Salvar perfil de cobrança exige confirmação recente por e-mail; gerar PIX ou boleto permanece restrito ao proprietário, mas não pede novo código. A renovação continua condicionada ao webhook validado do Mercado Pago.
+- `account-api` e `billing-api` foram republicadas no projeto Supabase v2 e o painel confirmou **Successfully updated edge function** para ambas. O `admin-api` não foi alterado e continua exigindo MFA por aplicativo.
+- Testes direcionados de autenticação, identidade, interface, contratos Edge, cobrança e isolamento: **47 aprovados**. Pendente apenas salvar o modelo **Magic link or OTP** com `{{ .Token }}` e gerar o novo executável de teste.
+- Novo executável beta gerado em `dist_desktop_v2_email_otp_test/SaaS Assistente PRO 2.0 - Teste.exe`, com **192.296.571 bytes** e SHA-256 `4E5C4BE18278F88F564DEEF6BD71F97ADED0F8B97DDAC5642A499B6DD655C641`. Pendente: salvar o modelo de e-mail já preparado no painel e realizar a validação integrada pelo proprietário.
+
+## Redesenho visual do Gerador Admin 2.0 — 04/09/2026
+
+- A interface administrativa foi reorganizada para reduzir a sensação de telas técnicas e facilitar a localização das funções por usuários não técnicos.
+- O tema principal passou a usar fundo claro, cartões brancos, hierarquia tipográfica mais nítida e azul como cor primária, mantendo a barra lateral em azul-marinho para orientação constante.
+- A navegação foi agrupada em **Gestão de clientes** e **Sistema e suporte**, com rótulos mais descritivos: computadores e licenças, empresas e assinaturas, versões/preços/avisos, chaves temporárias e auditoria/diagnósticos.
+- O cabeçalho de cada área agora explica a finalidade da tela. Os indicadores gerais aparecem somente nas áreas em que ajudam a decisão e são ocultados nas telas operacionais em que causavam excesso de informação.
+- A tela de acesso administrativo recebeu campos explicitamente rotulados, texto de segurança mais claro e identidade visual alinhada ao restante do Gerador.
+- Validação automatizada completa: **130 testes aprovados**. Executável de prévia gerado em `dist_admin_v2_redesign_test/Gerador Admin - SaaS Assistente PRO.exe`, com **32.803.746 bytes** e SHA-256 `C1C6D002A8CBF79B6C97A95D432F1464141CA69AF9299C5C7DEBC7FD11EF7AA8`.
+- Pendente: validação visual do proprietário em resolução real antes de considerar o novo desenho aprovado.
+- Revisão de intuitividade em 05/09/2026: as áreas sobrepostas foram preservadas, mas reorganizadas como **Por computador** e **Por empresa**. Cartões de contexto explicam se a alteração afeta uma máquina ou a conta inteira; há atalhos entre os fluxos e o atalho da empresa mantém o computador selecionado ao abrir seus ajustes individuais.
+- Nenhuma função foi removida: edição de licença, limites diários e por lote, relatórios, avisos, assinatura, preços, vigência, bloqueio, chaves e auditoria permanecem disponíveis.
+- A janela principal deixou de forçar maximização depois de calcular sua posição. Login, painel e modais agora são centralizados após o layout, respeitando a área útil do monitor atual e a barra de tarefas.
+- Suíte completa após a revisão: **132 testes aprovados**. Nova prévia em `dist_admin_v2_intuitive_test/Gerador Admin - SaaS Assistente PRO.exe`, com **32.805.618 bytes** e SHA-256 `402C37AFECDA2594A8E22EBFFBAAB3414F288DF8EEE4108915CBB483160AA2A8`.
+- A validação visual revelou estouro lateral em monitores com escala do Windows acima de 100%. A causa era o CustomTkinter aplicar o DPI ao tamanho da janela, mas manter a posição em pixels físicos. O centralizador agora converte o limite físico para a escala lógica, calcula a posição pelo tamanho já escalado e preserva margem em relação à área útil do monitor.
+- A correção de DPI manteve os **132 testes aprovados**. Prévia corrigida em `dist_admin_v2_dpi_test/Gerador Admin - SaaS Assistente PRO.exe`, com **32.807.712 bytes** e SHA-256 `4632811A06546D1BC7A06EDD1AA017C7DC4E1B82897848CE63A77766E03B6FB4`.
+
+## Estabilidade SSI/TSI e preservação local — 06/09/2026
+
+- O teste visual A→B→A foi realizado pelo proprietário com registros reais e confirmou que o WhatsApp abre o destinatário escolhido. O nome exibido no topo também foi corrigido para sempre refletir a conversa iniciada por último.
+- Como não existem números controlados na base atual, nenhum lote real foi executado. A validação de lote permanece adiada para evitar contato indevido com clientes reais.
+- A abertura assíncrona da ficha SSI agora possui um identificador exclusivo por operação. Respostas atrasadas de uma ficha anterior são ignoradas e não podem preencher, abrir conversa ou avançar a fila do cliente seguinte.
+- As gravações dos históricos TSI, SSI, pesquisas enviadas, mapeamento de clientes e comunicados passaram a usar arquivo temporário, sincronização e substituição atômica.
+- Um histórico existente com JSON inválido deixa de ser interpretado como vazio durante atualizações: a operação é cancelada e o arquivo original é preservado para diagnóstico/recuperação.
+- Foram adicionados testes para callbacks SSI obsoletos, interrupção de arquivos, preservação de conteúdo inválido e manutenção da deduplicação. Suíte completa: **145 testes aprovados**.
+- Nova prévia gerada em `dist_desktop_v2_extraction_stability_test/SaaS Assistente PRO 2.0 - Teste.exe`, com **193.221.955 bytes** e SHA-256 `4773AA9E76155EAD7693CC22DB86B4AF08DADB69F2A00E6685185406776233A2`. A prévia anterior foi encerrada pelo caminho exato e esta compilação foi iniciada para avaliação, sem afetar o Gerador Admin nem a versão 1.9.6.
+
+## Integridade dos indicadores SSI/TSI — 08/09/2026
+
+- A revisão dos dashboards identificou que uma pesquisa sem nota válida de recomendação podia ser apresentada como detratora. TSI e SSI agora classificam esse caso separadamente como **Sem nota de recomendação**, com filtro e identidade visual próprios.
+- Os percentuais de Promotores, Neutros e Detratores do TSI passaram a usar somente respostas válidas de 0 a 10 como denominador. Valores ausentes, negativos ou acima de 10 não distorcem a classificação ou o NPS.
+- O período TSI agora reconhece datas brasileiras, mês/ano e timestamps ISO com horário, evitando que respostas válidas caiam em **Desconhecido**.
+- Dez cenários históricos de métricas que dependiam de `pytest` foram incorporados à suíte padrão `unittest`, sem adicionar dependência ao executável.
+- Suíte completa após a revisão: **159 testes aprovados**. A fila de enviados/respondidos e o relatório personalizado permaneceram intocados, conforme decisão do proprietário.
+- Prévia gerada em `dist_desktop_v2_dashboard_integrity_test/SaaS Assistente PRO 2.0 - Teste.exe`, com **193.224.628 bytes** e SHA-256 `17F3BB55F9DFA09AEC53748055CDCAAD01CC7F5681E7219A032669E5EED8C980`. O executável foi iniciado para conferência visual dos dashboards.
+
+## Ativação simplificada de computador adicional — 08/09/2026
+
+- O primeiro acesso de um computador adicional deixou de solicitar e-mail e senha. A tela agora pede somente o código de ativação gerado no computador principal.
+- O código adotado tem formato curto `PC-ABCD-1234`, validade de 15 minutos e uso único. O banco armazena somente seu hash, limita tentativas por hardware, vincula empresa/unidade/hardware e registra auditoria.
+- A geração continua restrita a proprietário ou administrador autenticado, mas não exige uma segunda confirmação por e-mail. As demais alterações empresariais sensíveis preservam o OTP.
+- A Conta Empresarial mostra o acréscimo mensal antes da geração. Assinatura ou teste vencido desabilita o botão e informa claramente a data e a necessidade de renovação.
+- A migração `018_v2_simple_device_activation.sql` foi aplicada no projeto Supabase. Como nenhuma instalação 2.0 está em uso, o overload antigo de resgate foi removido e permanece somente o contrato novo, sem e-mail, senha ou MFA no computador adicional.
+- `account-api` e `desktop-api` foram publicadas pelo editor web; o painel confirmou **Successfully updated edge function** para ambas. A migração foi corrigida para chamar `extensions.digest`, conforme o schema real do `pgcrypto` no projeto.
+- Teste remoto com código fictício bem-formado retornou `409 {"ok":false,"error":"LINK_CODE_NOT_AVAILABLE"}`. Isso comprova que o endpoint novo está online, aceita a solicitação sem sessão de usuário e rejeita códigos inexistentes sem criar vínculo.
+- O primeiro resgate de um código real revelou que a segunda chamada criptográfica da função ainda usava `gen_random_bytes` sem o schema do `pgcrypto`. A migração 018 foi corrigida para `extensions.gen_random_bytes` e reaplicada no Supabase.
+- Um teste transacional completo criou código, instalação e licença e terminou em `ROLLBACK`; o SQL Editor respondeu **Success. No rows returned**, confirmando o fluxo sem deixar dados de teste no projeto. O código real que falhou antes da correção não foi consumido pela transação abortada e pode ser reutilizado enquanto estiver dentro dos 15 minutos.
+- A previsão do próximo computador na Conta Empresarial passou a exibir separadamente o valor atual e o total após a próxima ativação, eliminando a aparente divergência com a cobrança consolidada.
+- No Gerador Admin, o acesso individual foi renomeado para **Licença e envios**. O formulário agora separa **Licença e cobrança**, **Limites de envio** e **Comunicação**, usando os rótulos **Limite diário de mensagens** e **Clientes permitidos por disparo**. A ajuda esclarece que o lote é selecionado de uma vez, mas enviado sequencialmente.
+- Validação desta melhoria: 10 testes da Conta Empresarial, 9 testes de visual/ações do Gerador e 12 testes dos limites de mensagens aprovados. Desktop recompilado em `dist_desktop_v2_price_hint_test` (193.225.456 bytes; SHA-256 `CBBD747FDCB7F136C3349995B98C131E08088BC65AF2EA57D5EE7DAE83CBADDF`). Gerador recompilado em `dist_admin_v2_limits_test` (32.828.107 bytes; SHA-256 `2EE103AB84D8C6CBB96F4452688D0F74282E4F0B6BC2359DFE2DC7746C796884`).
+- Suíte completa: **165 testes aprovados**. Prévia local gerada em `dist_desktop_v2_simple_activation_test/SaaS Assistente PRO 2.0 - Teste.exe`, com **193.225.018 bytes** e SHA-256 `92AA67E370BCAB37CB2F9232815CFE63665390B5E111C17424586426C45B45C0`.
+
+## Atualizador automático e build oficial 2.0.0 — 08/09/2026
+
+- O Assistente de Atualização deixou de exigir reabertura manual. Depois que o Desktop fecha, ele aguarda o processo terminar, executa o Inno Setup silenciosamente, abre o executável instalado e encerra sozinho. Em caso de falha de instalação ou abertura, exibe uma orientação segura ao usuário.
+- O comparador de versões passou a compreender pré-lançamentos; `2.0.0` é reconhecida corretamente como posterior a `2.0.0-beta.1`.
+- O comando enviado ao assistente contém explicitamente o caminho oficial por usuário `%LOCALAPPDATA%\\Programs\\SaaS Assistente PRO\\SaaS Assistente PRO.exe`.
+- Foi restaurado no projeto 2.0 o script coordenado `update_version.py`, que atualiza `src/version.py`, a versão do Inno Setup, o nome do executável de origem e o nome do instalador.
+- Regressão completa após a alteração: **171 testes aprovados**. Os 13 testes específicos cobrem comparação beta/final, validação SHA-256/PE, parâmetros silenciosos, caminho de reabertura, acionamento do novo executável e versionamento coordenado.
+- Build oficial protegido concluído: `dist/Instalador_SaaS_Assistente_PRO_v2.0.0.exe`, **247.066.250 bytes**, SHA-256 `ad54831034219d4dd5b6609dda6b32424fc6ce49ec2e85d8a3cf3bd64a8ba8df`. Manifesto: `dist/release_v2.0.0.json`.
+- A inspeção interna confirmou `SaaS Update Assistant.exe` incorporado ao executável principal. O teste integrado do assistente instalou silenciosamente no caminho oficial, removeu a cópia temporária e abriu automaticamente o Desktop instalado.
+- Release `v2.0.0` publicada no GitHub como **Latest**, com o instalador de 236 MB e digest exibido pelo próprio GitHub idêntico ao manifesto local.
+- O Supabase v2 foi configurado com `current_version=2.0.0`, `minimum_version=0.0.0` e `update_required=false`, mantendo a primeira distribuição opcional. A consulta de confirmação retornou o link público e o SHA-256 corretos.
+- O cliente real do Desktop, simulando `2.0.0-beta.1`, recebeu os cinco parâmetros corretos do `desktop-api`.
+- Teste OTA remoto concluído em 09/09/2026: o `DownloadWorker` baixou o instalador público, validou PE/SHA-256 sem erros; o assistente instalou, removeu o arquivo temporário e reabriu automaticamente `%LOCALAPPDATA%\\Programs\\SaaS Assistente PRO\\SaaS Assistente PRO.exe`.

@@ -44,7 +44,7 @@ def main():
     print("\n[1/4] Atualizando controle de versão e instalador...")
     subprocess.run([sys.executable, "update_version.py", versao], check=True)
 
-    # 2. Assistente independente: espera o instalador finalizar e não reinicia o SaaS.
+    # 2. Assistente independente: instala e reabre o SaaS após o processo anterior sair.
     print("\n[2/4] Gerando Assistente de Atualização...")
     helper_dist = os.path.join(cwd, "dist_update_helper")
     helper_work = os.path.join(cwd, "build_update_helper")
@@ -62,7 +62,7 @@ def main():
     # 3. pyi-makespec. O atualizador seguro está integrado ao aplicativo principal.
     print(f"\n[3/4] Gerando spec para SaaS Assistente PRO v{versao}...")
     makespec_cmd = [
-        "pyi-makespec",
+        sys.executable, "-m", "PyInstaller.utils.cliutils.makespec",
         "--splash", os.path.join("src", "assets", "icon.png"),
         "--onefile",
         "--windowed",
@@ -95,7 +95,7 @@ def main():
     # 3. PyArmor gen --pack
     print(f"\n[4/4] Ofuscando código e empacotando com PyArmor...")
     pyarmor_cmd = [
-        "pyarmor", "gen",
+        sys.executable, "-m", "pyarmor.cli", "gen",
         "--pack", f"SaaS Assistente PRO v{versao}.spec",
         os.path.join("src", "main.py")
     ]

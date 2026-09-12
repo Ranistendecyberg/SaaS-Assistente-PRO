@@ -1,13 +1,21 @@
 import { cleanText, jsonResponse, readJson } from "../_shared/http.ts";
-import { randomToken, requireUser, sha256 } from "../_shared/security.ts";
-import { normalizeCnpj, requireCompanyMember, validCnpj } from "../_shared/v2.ts";
+import { requireUser, sha256 } from "../_shared/security.ts";
+import { normalizeCnpj, requireCompanyMember, validDocument, hasRecentEmailConfirmation } from "../_shared/v2.ts";
 
 const MUTATIONS = new Set([
   "create_business_unit",
   "issue_device_link_code",
   "schedule_device_removal",
   "cancel_device_removal",
+  "transfer_principal",
 ]);
+
+function activationCode(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const random = crypto.getRandomValues(new Uint8Array(8));
+  const value = [...random].map((byte) => alphabet[byte & 31]).join("");
+  return `PC-${value.slice(0, 4)}-${value.slice(4)}`;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return jsonResponse({ ok: true });
@@ -17,6 +25,23 @@ Deno.serve(async (req) => {
     const action = cleanText(body.action, 80);
     const companyId = cleanText(body.company_id, 64);
     const { client, user, payload } = await requireUser(req);
+
+    if (action === "recover_principal_access") {
+      if (!user.email_confirmed_at || !hasRecentEmailConfirmation(payload, 600)) {
+        return jsonResponse({ error: "EMAIL_OTP_REQUIRED" }, 428);
+      }
+      const hardwareId = cleanText(body.hardware_id, 129);
+      if (hardwareId.length < 8 || hardwareId.length > 128) {
+        return jsonResponse({ error: "RECOVERY_NOT_ALLOWED" }, 403);
+      }
+      const { data, error } = await client.rpc("recover_principal_access_server", {
+        p_user_id: user.id, p_hardware_id: hardwareId,
+      });
+      if (error) throw error;
+      if (!data?.ok) return jsonResponse({ error: data?.error || "RECOVERY_NOT_ALLOWED" },
+        data?.error === "RECOVERY_RATE_LIMITED" ? 429 : 403);
+      return jsonResponse(data);
+    }
 
     if (action === "list_companies") {
       const { data, error } = await client.from("company_members")
@@ -37,7 +62,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "EMAIL_CONFIRMATION_REQUIRED" }, 403);
       }
       if (companyName.length < 2 || ownerName.length < 2 || phone.length < 10 ||
-          phone.length > 15 || !validCnpj(cnpj) || hardwareId.length < 8) {
+          phone.length > 15 || !validDocument(cnpj) || hardwareId.length < 8) {
         return jsonResponse({ error: "INVALID_ONBOARDING" }, 400);
       }
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -80,7 +105,10 @@ Deno.serve(async (req) => {
     }
 
     const member = await requireCompanyMember(client, user.id, companyId, {
-      mutation: MUTATIONS.has(action), aal: payload.aal,
+      mutation: MUTATIONS.has(action),
+      ownerOnly: action === "transfer_principal",
+      requireRecentEmail: action !== "issue_device_link_code",
+      payload,
     });
 
     if (action === "account_summary") {
@@ -105,7 +133,7 @@ Deno.serve(async (req) => {
       const displayName = cleanText(body.display_name, 160);
       const cnpj = normalizeCnpj(body.cnpj);
       const unitType = cleanText(body.unit_type, 20) || "branch";
-      if (displayName.length < 2 || !validCnpj(cnpj)) {
+      if (displayName.length < 2 || !validDocument(cnpj)) {
         return jsonResponse({ error: "INVALID_BUSINESS_UNIT" }, 400);
       }
       if (!["headquarters", "branch"].includes(unitType)) {
@@ -121,19 +149,39 @@ Deno.serve(async (req) => {
 
     if (action === "issue_device_link_code") {
       const businessUnitId = cleanText(body.business_unit_id, 64);
+      const { data: subscription, error: subscriptionError } = await client
+        .from("company_subscriptions")
+        .select("status, trial_expires_at, current_period_end")
+        .eq("company_id", companyId).maybeSingle();
+      if (subscriptionError) throw subscriptionError;
+      const subscriptionExpiry = subscription?.current_period_end || subscription?.trial_expires_at;
+      if (!subscription || !["trial", "active"].includes(subscription.status) ||
+          !subscriptionExpiry || Date.parse(subscriptionExpiry) <= Date.now()) {
+        return jsonResponse({ error: "SUBSCRIPTION_NOT_ACTIVE" }, 409);
+      }
       if (businessUnitId) {
         const { data: unit, error } = await client.from("business_units")
           .select("id").eq("id", businessUnitId).eq("company_id", companyId).eq("active", true).maybeSingle();
         if (error) throw error;
         if (!unit) return jsonResponse({ error: "BUSINESS_UNIT_NOT_FOUND" }, 404);
       }
-      const code = `PC-${randomToken(16).toUpperCase()}`;
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { count: recentCodes, error: rateError } = await client
+        .from("device_link_codes")
+        .select("id", { count: "exact", head: true })
+        .eq("created_by", user.id)
+        .gte("created_at", tenMinutesAgo);
+      if (rateError) throw rateError;
+      if ((recentCodes || 0) >= 5) {
+        return jsonResponse({ error: "LINK_CODE_RATE_LIMITED" }, 429);
+      }
+      const code = activationCode();
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
       const { data, error } = await client.from("device_link_codes").insert({
         company_id: companyId,
         business_unit_id: businessUnitId || null,
         code_hash: await sha256(code),
-        code_prefix: `PC-${code.slice(-6)}`,
+        code_prefix: code.slice(0, 7),
         expires_at: expiresAt,
         created_by: user.id,
       }).select("id, code_prefix, status, expires_at").single();
@@ -183,12 +231,23 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true, installation: data });
     }
 
+    
+    if (action === "transfer_principal") {
+      const newPrincipalId = cleanText(body.installation_id, 64);
+      const { data, error } = await client.rpc("transfer_principal_server", {
+        p_company_id: companyId,
+        p_new_principal_installation_id: newPrincipalId,
+      });
+      if (error) throw error;
+      return jsonResponse(data, data?.ok ? 200 : 400);
+    }
+
     return jsonResponse({ error: "UNKNOWN_ACTION" }, 400);
   } catch (error) {
     const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
     const status = code === "UNAUTHORIZED" ? 401
       : ["FORBIDDEN", "OWNER_REQUIRED"].includes(code) ? 403
-      : code === "MFA_REQUIRED" ? 428
+      : code === "EMAIL_OTP_REQUIRED" ? 428
       : code === "COMPANY_REQUIRED" ? 400
       : 500;
     return jsonResponse({ error: status === 500 ? "INTERNAL_ERROR" : code }, status);

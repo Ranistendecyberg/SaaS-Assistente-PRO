@@ -19,6 +19,11 @@ declare
   v_installation_id uuid;
   v_token text;
   v_device_class text;
+  v_subscription public.company_subscriptions%rowtype;
+  v_expires_at timestamptz;
+  v_report_links jsonb := '{}'::jsonb;
+  v_adjustment_notice text;
+  v_diagnostics_until timestamptz;
 begin
   if p_code_hash is null or length(p_code_hash) <> 64 then
     return jsonb_build_object('ok', false, 'error', 'INVALID_LINK_CODE');
@@ -54,6 +59,21 @@ begin
     return jsonb_build_object('ok', false, 'error', 'INSTALLATION_ALREADY_EXISTS');
   end if;
 
+  select * into v_subscription
+  from public.company_subscriptions
+  where company_id = v_code.company_id
+  for share;
+  if not found or v_subscription.status not in ('trial', 'active') then
+    return jsonb_build_object('ok', false, 'error', 'SUBSCRIPTION_NOT_ACTIVE');
+  end if;
+  v_expires_at := coalesce(
+    v_subscription.current_period_end,
+    v_subscription.trial_expires_at
+  );
+  if v_expires_at is null or v_expires_at <= now() then
+    return jsonb_build_object('ok', false, 'error', 'SUBSCRIPTION_EXPIRED');
+  end if;
+
   if exists (
     select 1 from public.installations
     where company_id = v_code.company_id
@@ -74,6 +94,33 @@ begin
     encode(digest(v_token, 'sha256'), 'hex'), now(),
     'active', nullif(trim(p_app_version), ''), v_device_class, 'active', p_user_id, now()
   ) returning id into v_installation_id;
+
+  -- Compatibilidade temporária: enquanto o Desktop ainda consulta a licença
+  -- por instalação, cada adicional recebe a vigência da assinatura da empresa.
+  -- Links e avisos são herdados do computador principal, sem compartilhar token.
+  select l.report_links, l.adjustment_notice, l.detailed_diagnostics_until
+  into v_report_links, v_adjustment_notice, v_diagnostics_until
+  from public.licenses l
+  join public.installations i on i.id = l.installation_id
+  where i.company_id = v_code.company_id
+    and i.device_class = 'principal'
+    and i.billing_status <> 'removed'
+  order by i.created_at
+  limit 1;
+
+  insert into public.licenses (
+    installation_id, status, license_type, expires_at, monthly_price,
+    report_links, adjustment_notice, detailed_diagnostics_until
+  ) values (
+    v_installation_id,
+    case when v_subscription.status = 'trial' then 'trial' else 'active' end,
+    case when v_subscription.status = 'trial' then 'trial' else 'subscription' end,
+    v_expires_at,
+    v_subscription.additional_seat_price,
+    coalesce(v_report_links, '{}'::jsonb),
+    v_adjustment_notice,
+    v_diagnostics_until
+  );
 
   update public.device_link_codes
   set status = 'used', redeemed_by_installation = v_installation_id,

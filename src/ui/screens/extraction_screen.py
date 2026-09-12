@@ -15,6 +15,9 @@ from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 # import pandas as pd deferred
 from src.core.database import DatabaseManager
 from src.core.telemetry import TelemetryClient, anonymous_id, record_event
+
+_DEV_MODE_HASH = "2a48d3dea06bb97c2ceeec84aff334a2769d912c308a9f9680d38053d078de62" # '@1234'
+
 class ExtractionScreen(QWidget):
     sig_dispatch_whatsapp = pyqtSignal(str, str)
     sig_check_whatsapp_login = pyqtSignal()
@@ -26,6 +29,11 @@ class ExtractionScreen(QWidget):
         
         self.fila_extraida = []
         self.fila_disparo = []
+        self._conversation_generation = 0
+        self._pending_conversation_generation = None
+        self._ssi_generation = 0
+        self._active_ssi_generation = None
+        self._ssi_extracting_generation = None
         
         self.ssi_pronto = False
         self.tsi_pronto = False
@@ -143,10 +151,13 @@ class ExtractionScreen(QWidget):
         layout_ia.addLayout(combo_layout, stretch=1)
         
         # Controles de Disparo e Atendimento Individual
-        self.btn_conversar = QPushButton("💬 Conversar com o Cliente")
+        self.btn_conversar = QPushButton("💬 Conversar com o Destacado")
         self.btn_conversar.setFixedSize(220, 45)
         self.btn_conversar.setEnabled(False)
         self.btn_conversar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_conversar.setToolTip(
+            "Abre somente a linha destacada em azul; não envia mensagem automaticamente."
+        )
         self.btn_conversar.setStyleSheet("""
             QPushButton { background-color: #2563EB; color: white; font-weight: bold; border-radius: 6px; font-size: 13px; border-bottom: 4px solid #1D4ED8; }
             QPushButton:hover { background-color: #1D4ED8; }
@@ -191,10 +202,27 @@ class ExtractionScreen(QWidget):
         self.search_box.setStyleSheet("border: 1px solid #E2E8F0; border-radius: 5px; padding: 8px; font-size: 13px; margin: 5px 10px;")
         self.search_box.textChanged.connect(self.filtrar_lista)
         layout_fila.addWidget(self.search_box)
+
+        self.selection_hint = QLabel("● Linha azul: conversa   ☑ Marcados: envio em lote")
+        self.selection_hint.setStyleSheet(
+            "color: #1E40AF; background: #EFF6FF; border: 1px solid #BFDBFE; "
+            "border-radius: 5px; padding: 6px 10px; margin: 0 10px 4px 10px; "
+            "font-size: 11px; font-weight: 600;"
+        )
+        layout_fila.addWidget(self.selection_hint)
         
         self.list_widget = QListWidget()
         self.list_widget.setStyleSheet("""
-            QListWidget { border: none; padding: 5px; font-size: 13px; color: #1E293B; }
+            QListWidget { border: none; padding: 5px; font-size: 13px; color: #1E293B; outline: none; }
+            QListWidget::item { padding: 7px 8px; margin: 2px 4px; border: 2px solid transparent; border-radius: 6px; }
+            QListWidget::item:hover { background: #F1F5F9; border-color: #CBD5E1; }
+            QListWidget::item:selected,
+            QListWidget::item:selected:!active {
+                background: #2563EB;
+                color: #FFFFFF;
+                border: 2px solid #1D4ED8;
+                font-weight: 700;
+            }
             QScrollBar:vertical { width: 14px; background: #F1F5F9; border-radius: 7px; }
             QScrollBar::handle:vertical { background: #CBD5E1; min-height: 20px; border-radius: 7px; }
         """)
@@ -593,10 +621,11 @@ class ExtractionScreen(QWidget):
             QLineEdit.EchoMode.Password
         )
         if ok:
-            if senha == "@1234":
+            import hashlib
+            if hashlib.sha256(senha.encode("utf-8")).hexdigest() == _DEV_MODE_HASH:
                 idx_atual = self.stack_direita.currentIndex()
                 if idx_atual == 2:
-                    novo_idx = 1 if self.iniciou_carregamento else 0
+                    novo_idx = 1 if getattr(self, 'iniciou_carregamento', False) else 0
                     self.stack_direita.setCurrentIndex(novo_idx)
                     titulo = "  ✉️ Editor de Mensagem e Disparo WhatsApp" if novo_idx == 1 else "  🔐 Visão do myHonda (Faça o Login para Iniciar automação)"
                     self.lbl_nav_titulo.setText(titulo)
@@ -1877,17 +1906,6 @@ class ExtractionScreen(QWidget):
             if idx is not None and idx < len(self.fila_extraida):
                 self.fila_extraida[idx]['selecionado'] = (item.checkState() == Qt.CheckState.Checked)
 
-        # A fila permite somente uma pesquisa marcada por vez. O bloqueio de
-        # sinais evita que a reconstrução visual seja interpretada como uma
-        # nova seleção do operador.
-        selecionado_preservado = None
-        for idx, registro in enumerate(self.fila_extraida):
-            if registro.get('selecionado', False):
-                if selecionado_preservado is None:
-                    selecionado_preservado = idx
-                else:
-                    registro['selecionado'] = False
-
         sinais_bloqueados = self.list_widget.blockSignals(True)
         self.list_widget.clear()
         texto_busca = self.search_box.text().strip().lower()
@@ -1918,7 +1936,8 @@ class ExtractionScreen(QWidget):
             cliente = item.get("cliente", "Desconhecido")
             info_extra = item.get("os", "")
             status_prefix = ""
-            flags = Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled
+            flags = (Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled
+                     | Qt.ItemFlag.ItemIsSelectable)
             is_checked = Qt.CheckState.Unchecked
             
             # 1. Checa se o usuário já disparou para esse cara nesta sessão
@@ -1952,12 +1971,13 @@ class ExtractionScreen(QWidget):
 
         self.list_widget.blockSignals(sinais_bloqueados)
         self.lbl_fila.setText(f"  Fila de Disparo ({visiveis} Registros)")
+        self._atualizar_resumo_selecao()
         
     def filtrar_lista(self):
         self.atualizar_lista_ui()
         
     def ao_alterar_selecao_unica(self, item_alterado):
-        """Mantém uma única pesquisa selecionada em toda a fila."""
+        """Marca clientes; a licença é revalidada antes de iniciar o lote."""
         idx_alterado = item_alterado.data(Qt.ItemDataRole.UserRole)
         if idx_alterado is None or idx_alterado >= len(self.fila_extraida):
             return
@@ -1965,20 +1985,27 @@ class ExtractionScreen(QWidget):
         marcado = item_alterado.checkState() == Qt.CheckState.Checked
         if not marcado:
             self.fila_extraida[idx_alterado]['selecionado'] = False
+            self._atualizar_resumo_selecao()
             return
 
-        for idx, registro in enumerate(self.fila_extraida):
-            registro['selecionado'] = (idx == idx_alterado)
+        self.fila_extraida[idx_alterado]['selecionado'] = True
+        self._atualizar_resumo_selecao()
 
-        sinais_bloqueados = self.list_widget.blockSignals(True)
-        try:
-            for pos in range(self.list_widget.count()):
-                item = self.list_widget.item(pos)
-                idx = item.data(Qt.ItemDataRole.UserRole)
-                if idx != idx_alterado and (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
-                    item.setCheckState(Qt.CheckState.Unchecked)
-        finally:
-            self.list_widget.blockSignals(sinais_bloqueados)
+    def _atualizar_resumo_selecao(self):
+        quantidade = sum(
+            1 for item in self.fila_extraida
+            if item.get('selecionado', False) and not item.get('enviado', False)
+        )
+        if hasattr(self, 'selection_hint'):
+            sufixo = f"   •   {quantidade} marcado(s)" if quantidade else ""
+            self.selection_hint.setText(
+                f"● Linha azul: conversa   ☑ Marcados: envio em lote{sufixo}"
+            )
+        if hasattr(self, 'btn_dispatch') and self.btn_dispatch.isEnabled():
+            self.btn_dispatch.setText(
+                f"▶ Enviar {quantidade} pesquisa(s)" if quantidade
+                else "▶ Enviar Pesquisa Selecionada"
+            )
 
     def iniciar_disparo(self):
         # Inicializa lista de rastreio de clientes com problemas de envio
@@ -1999,14 +2026,43 @@ class ExtractionScreen(QWidget):
             QMessageBox.warning(self, "Aviso", "Selecione pelo menos um cliente válido para enviar.")
             return
 
-        if len(self.fila_disparo) > 1:
+        from src.core.license_manager import LicenseManager
+        dados = LicenseManager().validar_licenca()
+        limite_lote = max(1, int(dados.get('limite_lote') or 1))
+        if dados.get('status') not in {'ativa', 'trial'}:
+            self.fila_disparo = []
+            QMessageBox.warning(self, "Licença", "Não foi possível autorizar envios para esta máquina.")
+            return
+        if len(self.fila_disparo) > limite_lote:
             self.fila_disparo = []
             QMessageBox.warning(
                 self,
-                "Envio individual",
-                "Por segurança, envie a pesquisa para apenas um cliente por vez."
+                "Limite por lote",
+                f"Esta máquina permite até {limite_lote} cliente(s) por lote. Reduza a seleção."
             )
             return
+
+        if len(self.fila_disparo) > 1:
+            nomes = [
+                str(self.fila_extraida[idx].get('cliente') or 'Cliente')
+                for idx in self.fila_disparo[:5]
+            ]
+            restantes = len(self.fila_disparo) - len(nomes)
+            resumo = "\n".join(f"• {nome}" for nome in nomes)
+            if restantes:
+                resumo += f"\n• e mais {restantes} cliente(s)"
+            resposta = QMessageBox.question(
+                self,
+                "Confirmar envio em lote",
+                f"Você selecionou {len(self.fila_disparo)} clientes:\n\n{resumo}\n\n"
+                "As mensagens serão enviadas uma por vez. Deseja continuar?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if resposta != QMessageBox.StandardButton.Yes:
+                self.fila_disparo = []
+                self._atualizar_resumo_selecao()
+                return
             
         self.btn_dispatch.setEnabled(False)
         self.btn_dispatch.setText("⏳ Verificando WhatsApp...")
@@ -2017,7 +2073,7 @@ class ExtractionScreen(QWidget):
     def on_login_status_result(self, is_logged_in):
         if not is_logged_in:
             self.btn_dispatch.setEnabled(True)
-            self.btn_dispatch.setText("▶ Enviar Pesquisa Selecionada")
+            self._atualizar_resumo_selecao()
             QMessageBox.critical(
                 self, 
                 "WhatsApp Não Conectado", 
@@ -2035,7 +2091,6 @@ class ExtractionScreen(QWidget):
     def processar_proximo_disparo(self):
         if not self.fila_disparo:
             self.btn_dispatch.setEnabled(True)
-            self.btn_dispatch.setText("▶ Enviar Pesquisa Selecionada")
             self.status_honda.setText("🟢 Disparo Finalizado!")
             self.atualizar_lista_ui()
             
@@ -2048,15 +2103,17 @@ class ExtractionScreen(QWidget):
             
         from src.core.license_manager import LicenseManager
         lm = LicenseManager()
-        pode_enviar, motivo = lm.checar_limite_envio()
+        pode_enviar, motivo, reserva_id = lm.reservar_envio()
         
         if not pode_enviar:
             self.btn_dispatch.setEnabled(True)
-            self.btn_dispatch.setText("▶ Enviar Pesquisa Selecionada")
+            self._atualizar_resumo_selecao()
             self.status_honda.setText("🔴 Disparo Interrompido (Limite atingido)")
             QMessageBox.warning(self, "Limite Atingido", motivo)
             self.atualizar_lista_ui()
             return
+
+        self.reserva_envio_atual = reserva_id
             
         self.indice_atual_disparo = self.fila_disparo.pop(0)
         self.item_atual = self.fila_extraida[self.indice_atual_disparo]
@@ -2084,6 +2141,8 @@ class ExtractionScreen(QWidget):
                     'telefone': self.item_atual.get('telefone', 'S/N') or 'S/N',
                     'motivo': 'Sem celular cadastrado no myHonda'
                 })
+                lm.liberar_reserva_envio(self.reserva_envio_atual)
+                self.reserva_envio_atual = ""
                 QTimer.singleShot(400, self.processar_proximo_disparo)
                 return
                 
@@ -2098,6 +2157,7 @@ class ExtractionScreen(QWidget):
         elif tipo == 'SSI':
             url_ficha = self.item_atual.get('url_ficha')
             if url_ficha:
+                self._begin_ssi_lookup()
                 url_completa = "https://myhonda.my.site.com" + url_ficha if url_ficha.startswith("/") else url_ficha
                 record_event(
                     "ssi_dispatch", "CONTACT_PAGE_OPEN_STARTED",
@@ -2119,6 +2179,10 @@ class ExtractionScreen(QWidget):
                 self.on_whatsapp_message_sent(False)
 
     def checar_ssi_ficha(self):
+        generation = getattr(self, '_active_ssi_generation', None)
+        if generation is None:
+            self.timer_ssi_ficha.stop()
+            return
         self.tentativas += 1
         if self.tentativas in (1, 5, 10) and TelemetryClient.instance().is_detailed_enabled():
             record_event(
@@ -2129,7 +2193,7 @@ class ExtractionScreen(QWidget):
                 login_redirect="login" in self.nav_ssi_oculto.url().toString().lower(),
             )
         if self.tentativas > 10:
-            self.timer_ssi_ficha.stop()
+            self._invalidate_ssi_lookup()
             if getattr(self, 'modo_conversa_individual', False):
                 self.modo_conversa_individual = False
                 self.status_honda.setText("⚠️ Tempo esgotado na ficha.")
@@ -2161,10 +2225,21 @@ class ExtractionScreen(QWidget):
                    (document.body && (document.body.innerText.includes('Dados para Contato') || document.body.innerText.includes('Celular'))); 
         })();
         """
-        self.nav_ssi_oculto.page().runJavaScript(js_check, self.callback_ssi_ficha_pronto)
+        self.nav_ssi_oculto.page().runJavaScript(
+            js_check,
+            lambda pronto, token=generation: self.callback_ssi_ficha_pronto(pronto, token),
+        )
 
-    def callback_ssi_ficha_pronto(self, pronto):
+    def callback_ssi_ficha_pronto(self, pronto, generation=None):
+        active_generation = getattr(self, '_active_ssi_generation', None)
+        if generation is None:
+            generation = active_generation
+        if generation is None or generation != active_generation:
+            return
         if pronto:
+            if getattr(self, '_ssi_extracting_generation', None) == generation:
+                return
+            self._ssi_extracting_generation = generation
             record_event(
                 "ssi_dispatch", "CONTACT_PAGE_READY",
                 survey_ref=anonymous_id(getattr(self, 'item_atual', {}).get('id', '')),
@@ -2223,9 +2298,21 @@ class ExtractionScreen(QWidget):
                 return extracted;
             })();
             """
-            self.nav_ssi_oculto.page().runJavaScript(js_extract, self.on_ssi_ficha_extraida)
+            self.nav_ssi_oculto.page().runJavaScript(
+                js_extract,
+                lambda result, token=generation:
+                    self.on_ssi_ficha_extraida(result, token),
+            )
 
-    def on_ssi_ficha_extraida(self, result):
+    def on_ssi_ficha_extraida(self, result, ssi_generation=None):
+        if ssi_generation is not None and (
+            ssi_generation != getattr(self, '_active_ssi_generation', None)
+            or ssi_generation != getattr(self, '_ssi_extracting_generation', None)
+        ):
+            return
+        if ssi_generation is not None:
+            self._active_ssi_generation = None
+            self._ssi_extracting_generation = None
         if getattr(self, 'modo_conversa_individual', False):
             self.modo_conversa_individual = False
             if result:
@@ -2257,7 +2344,9 @@ class ExtractionScreen(QWidget):
                 texto_base = texto_base.replace("[NOME]", self.item_conversa_individual.get('cliente', '').title())
                 texto_final = texto_base.replace("[LINK]", link)
                 
-                self.status_honda.setText(f"💬 Conversa iniciada com {self.item_conversa_individual.get('cliente', '')}")
+                self._mostrar_conversa_iniciada(
+                    self.item_conversa_individual.get('cliente', '')
+                )
                 self.sig_iniciar_conversa_individual.emit(celular, self.item_conversa_individual.get('cliente', ''), link, texto_final, self.item_conversa_individual)
                 self.sig_request_tab_change.emit(1)
             else:
@@ -2321,7 +2410,12 @@ class ExtractionScreen(QWidget):
 
     def iniciar_conversa_individual(self):
         """Abre o chat no WhatsApp Web para conversar individualmente com o cliente selecionado."""
-        # 1. Identifica o item selecionado ou marcado na lista
+        # Uma busca SSI anterior não pode substituir o cliente escolhido agora.
+        self._invalidate_ssi_lookup()
+        self._conversation_generation = getattr(self, '_conversation_generation', 0) + 1
+        self._pending_conversation_generation = None
+        self.modo_conversa_individual = False
+        # A linha destacada indica explicitamente o destinatário da conversa.
         item_selecionado = self.list_widget.currentItem()
         target_idx = None
         
@@ -2335,7 +2429,7 @@ class ExtractionScreen(QWidget):
                     target_idx = it.data(Qt.ItemDataRole.UserRole)
                     break
                     
-        if target_idx is None or target_idx >= len(self.fila_extraida):
+        if target_idx is None or target_idx < 0 or target_idx >= len(self.fila_extraida):
             QMessageBox.warning(self, "Aviso", "Por favor, clique em um cliente na lista para conversar.")
             return
             
@@ -2365,6 +2459,7 @@ class ExtractionScreen(QWidget):
             texto_final = texto_base.replace("[LINK]", link)
             
             # Abre a conversa no WhatsApp Web sem enviar a mensagem
+            self._mostrar_conversa_iniciada(cliente)
             self.sig_iniciar_conversa_individual.emit(fone, cliente, link, texto_final, cli_data)
             self.sig_request_tab_change.emit(1) # Pula para a aba do WhatsApp
             
@@ -2382,6 +2477,7 @@ class ExtractionScreen(QWidget):
                 link = MedalliaBuilder.encrypt_link(link_bruto)
                 texto_final = texto_base.replace("[LINK]", link)
                 
+                self._mostrar_conversa_iniciada(cliente)
                 self.sig_iniciar_conversa_individual.emit(fone, cliente, link, texto_final, cli_data)
                 self.sig_request_tab_change.emit(1)
             else:
@@ -2392,14 +2488,38 @@ class ExtractionScreen(QWidget):
                     return
                     
                 self.modo_conversa_individual = True
+                self._pending_conversation_generation = self._conversation_generation
                 self.item_conversa_individual = cli_data
                 self.status_honda.setText(f"🔍 Abrindo ficha de {cliente} no myHonda para obter contato...")
                 self.status_honda.setStyleSheet("background-color: white; color: #2563EB; padding: 8px 15px; border-radius: 15px; font-weight: bold; font-size: 12px; border: 1px solid #E2E8F0;")
                 
                 url_completa = "https://myhonda.my.site.com" + url_ficha if url_ficha.startswith("/") else url_ficha
+                self._begin_ssi_lookup()
                 self.nav_ssi_oculto.setUrl(QUrl(url_completa))
                 self.tentativas = 0
                 self.timer_ssi_ficha.start(2000)
+
+    def _begin_ssi_lookup(self):
+        self._ssi_generation = getattr(self, '_ssi_generation', 0) + 1
+        self._active_ssi_generation = self._ssi_generation
+        self._ssi_extracting_generation = None
+        return self._active_ssi_generation
+
+    def _invalidate_ssi_lookup(self):
+        self._ssi_generation = getattr(self, '_ssi_generation', 0) + 1
+        self._active_ssi_generation = None
+        self._ssi_extracting_generation = None
+        if hasattr(self, 'timer_ssi_ficha'):
+            self.timer_ssi_ficha.stop()
+
+    def _mostrar_conversa_iniciada(self, cliente):
+        nome = str(cliente or "Cliente").strip() or "Cliente"
+        self.status_honda.setText(f"💬 Conversa iniciada com {nome}")
+        self.status_honda.setStyleSheet(
+            "background-color: #EFF6FF; color: #1D4ED8; padding: 8px 15px; "
+            "border-radius: 15px; font-weight: bold; font-size: 12px; "
+            "border: 1px solid #93C5FD;"
+        )
 
     def on_link_individual_enviado(self, item_data):
         """Chamado quando o link individual foi enviado com sucesso pela tela do WhatsApp."""
@@ -2438,28 +2558,43 @@ class ExtractionScreen(QWidget):
             survey_ref=anonymous_id(getattr(self, 'item_atual', {}).get('id', '')),
             survey_type=getattr(self, 'item_atual', {}).get('tipo', 'desconhecido'),
         )
+        reservation_id = getattr(self, 'reserva_envio_atual', '')
+        self.reserva_envio_atual = ""
+        from src.core.license_manager import LicenseManager
+        reservation_manager = LicenseManager()
         if success:
             item = self.fila_extraida[self.indice_atual_disparo]
             item['enviado'] = True
             self.db_manager.mark_survey_as_sent(item.get('id', ''))
+
+            confirmed, confirmation_message = reservation_manager.confirmar_envio(reservation_id)
+            if not confirmed:
+                record_event(
+                    "dispatch", "MESSAGE_QUOTA_CONFIRMATION_PENDING", "ERROR",
+                    survey_ref=anonymous_id(item.get('id', '')),
+                )
+                self.status_honda.setText(f"⚠️ {confirmation_message}")
             
-            # Desconta do limite apenas se realmente enviou com sucesso
+            # Confirma a reserva já contabilizada e registra a auditoria.
             try:
-                from src.core.license_manager import LicenseManager
-                lm = LicenseManager()
-                lm.registrar_envio()
-                
                 # Auditoria na Nuvem
                 tipo = item.get('tipo', 'Desconhecido')
                 cliente = item.get('cliente', 'Desconhecido')
                 telefone = item.get('telefone', '')
                 if not telefone or telefone == 'S/N':
                     telefone = getattr(self, 'item_atual', {}).get('telefone', '000000000')
-                lm.registrar_log_auditoria(telefone, tipo, cliente)
+                reservation_manager.registrar_log_auditoria(telefone, tipo, cliente)
             except: pass
             
             self.atualizar_lista_ui() # Atualiza na tela imediatamente que foi enviado
         else:
+            released, release_message = reservation_manager.liberar_reserva_envio(reservation_id)
+            if not released:
+                record_event(
+                    "dispatch", "MESSAGE_QUOTA_RELEASE_PENDING", "ERROR",
+                    survey_ref=anonymous_id(getattr(self, 'item_atual', {}).get('id', '')),
+                )
+                self.status_honda.setText(f"⚠️ {release_message}")
             if not hasattr(self, 'clientes_nao_enviados'):
                 self.clientes_nao_enviados = []
             cur_cli = self.item_atual.get('cliente', 'Desconhecido')

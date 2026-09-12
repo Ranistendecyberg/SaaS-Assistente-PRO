@@ -1,4 +1,5 @@
 import os
+import json
 import urllib.parse
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton
 from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal
@@ -77,6 +78,14 @@ class WhatsAppScreen(QWidget):
         self.tentativas_click = 0
         self.modo_envio = "LOTE"
         self.cliente_ativo = None
+        self._navigation_generation = 0
+        self._send_loading = False
+        self._click_pending = False
+        self.web_view.loadFinished.connect(self._on_send_loaded)
+
+    def _on_send_loaded(self, ok):
+        if self._send_loading and ok and self.web_view.url().toString() == getattr(self, '_send_url', ''):
+            self._send_loading = False
         
     def check_login_status(self):
         script = """
@@ -101,6 +110,8 @@ class WhatsAppScreen(QWidget):
 
     def abrir_conversa_cliente(self, phone, nome, link_pesquisa, mensagem_template, item_data):
         """Abre o WhatsApp Web na conversa com o cliente sem enviar o link automaticamente."""
+        self.click_timer.stop()
+        self._navigation_generation = getattr(self, '_navigation_generation', 0) + 1
         self.cliente_ativo = {
             'phone': phone,
             'nome': nome,
@@ -112,15 +123,8 @@ class WhatsAppScreen(QWidget):
         
         # Abre o chat do número limpo
         url = f"https://web.whatsapp.com/send?phone={phone}"
-        js_code = f"""
-        if (window.location.href.includes('phone={phone}')) {{
-            window.history.pushState({{}}, '', '/');
-            setTimeout(function() {{ window.location.href = '{url}'; }}, 400);
-        }} else {{
-            window.location.href = '{url}';
-        }}
-        """
-        self.web_view.page().runJavaScript(js_code)
+        self.web_view.stop()
+        self.web_view.setUrl(QUrl(url))
 
     def enviar_link_pesquisa_ativo(self):
         """Dispara a mensagem com o link de pesquisa no chat do cliente ativo."""
@@ -141,25 +145,26 @@ class WhatsAppScreen(QWidget):
 
     def send_message(self, phone, message, modo="LOTE"):
         """Injeta a API do wa.me e começa a caçar o botão de enviar."""
+        self.click_timer.stop()
+        self._navigation_generation += 1
+        self._click_pending = False
+        self._send_loading = True
         self.modo_envio = modo
         self._telemetry_contact_ref = anonymous_id(phone)
         record_event("whatsapp", "SEND_STARTED", mode=modo, contact_ref=self._telemetry_contact_ref)
         encoded_msg = urllib.parse.quote(message)
         url = f"https://web.whatsapp.com/send?phone={phone}&text={encoded_msg}"
-        js_code = f"""
-        if (window.location.href.includes('phone={phone}')) {{
-            window.history.pushState({{}}, '', '/');
-            setTimeout(function() {{ window.location.href = '{url}'; }}, 500);
-        }} else {{
-            window.location.href = '{url}';
-        }}
-        """
-        self.web_view.page().runJavaScript(js_code)
+        self._send_url = url
+        self._expected_message = message
+        self.web_view.stop()
+        self.web_view.setUrl(QUrl(url))
         
         self.tentativas_click = 0
         self.click_timer.start(2000) # Checa a cada 2 segundos se a conversa abriu
 
     def tentar_clicar_enviar(self):
+        if self._click_pending:
+            return
         self.tentativas_click += 1
         if self.tentativas_click > 20: # 40 segundos de timeout
             self.click_timer.stop()
@@ -172,8 +177,13 @@ class WhatsAppScreen(QWidget):
                 self.sig_message_sent.emit(False)
             return
             
+        if self._send_loading:
+            return
         js_click = """
         (function() {
+            if (window.location.href !== EXPECTED_URL) return "NOT_FOUND";
+            const composer = document.querySelector('#main footer [contenteditable="true"]');
+            if (!composer || composer.innerText.trim() !== EXPECTED_MESSAGE.trim()) return "NOT_FOUND";
             function dispatchMouseEvents(el) {
                 var opts = {bubbles: true, cancelable: true, view: window};
                 el.dispatchEvent(new MouseEvent('mousedown', opts));
@@ -197,7 +207,7 @@ class WhatsAppScreen(QWidget):
             }
             
             // 2. Procura botão de enviar
-            let btn = document.querySelector('span[data-icon="send"]');
+            let btn = document.querySelector('#main footer span[data-icon="send"]');
             if (btn) {
                 let clickable = btn.closest('button') || btn.closest('div[role="button"]');
                 if (clickable) {
@@ -205,12 +215,12 @@ class WhatsAppScreen(QWidget):
                     return "SENT";
                 }
             }
-            let btn2 = document.querySelector('button[aria-label="Enviar"]') || document.querySelector('div[aria-label="Enviar"]');
+            let btn2 = document.querySelector('#main footer button[aria-label="Enviar"]') || document.querySelector('#main footer div[aria-label="Enviar"]');
             if (btn2) {
                 dispatchMouseEvents(btn2);
                 return "SENT";
             }
-            let btn3 = document.querySelector('button[aria-label="Send"]') || document.querySelector('div[aria-label="Send"]');
+            let btn3 = document.querySelector('#main footer button[aria-label="Send"]') || document.querySelector('#main footer div[aria-label="Send"]');
             if (btn3) {
                 dispatchMouseEvents(btn3);
                 return "SENT";
@@ -218,7 +228,16 @@ class WhatsAppScreen(QWidget):
             return "NOT_FOUND";
         })();
         """
-        self.web_view.page().runJavaScript(js_click, self.callback_click)
+        js_click = js_click.replace('EXPECTED_URL', json.dumps(self._send_url)).replace('EXPECTED_MESSAGE', json.dumps(self._expected_message))
+        generation = self._navigation_generation
+        self._click_pending = True
+        self.web_view.page().runJavaScript(js_click, lambda status: self._finish_click(generation, status))
+
+    def _finish_click(self, generation, status):
+        if generation != self._navigation_generation:
+            return
+        self._click_pending = False
+        self.callback_click(status)
 
     def callback_click(self, status):
         if status == "SENT" or status is True:

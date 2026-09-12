@@ -30,15 +30,19 @@ class SupabaseDesktopClientTests(unittest.TestCase):
     @patch("src.core.supabase_desktop._dpapi_transform", side_effect=lambda data, decrypt=False: data)
     def test_vinculo_adicional_salva_somente_token_da_instalacao(self, _transform):
         token = "c" * 64
-        with patch.object(self.client, "_request", return_value={"installation_token": token}):
-            self.client.redeem_device_link_code(
-                "PC-CODIGO-SUPER-SEGURO", "u" * 80, "2.0.0"
-            )
+        with patch.object(
+            self.client, "_request", return_value={"installation_token": token}
+        ) as request:
+            self.client.redeem_device_link_code("PC-ABCD-2345", "2.0.0")
+        request.assert_called_once_with(
+            "redeem_device_link_code",
+            {"link_code": "PC-ABCD-2345", "app_version": "2.0.0"},
+            require_session=False,
+        )
         self.assertEqual(self.client.load_session().token, token)
         with open(self.client.session_path, "rb") as file:
             stored = file.read().decode("utf-8")
-        self.assertNotIn("PC-CODIGO-SUPER-SEGURO", stored)
-        self.assertNotIn("u" * 80, stored)
+        self.assertNotIn("PC-ABCD-2345", stored)
 
     def test_pix_e_sempre_operado_pela_api_segura(self):
         with patch.object(self.client, "_request", return_value={"ok": True, "payment_id": "123"}) as request:

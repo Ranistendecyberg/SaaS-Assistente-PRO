@@ -19,24 +19,86 @@ VALOR_MENSALIDADE_PADRAO = 300.00
 
 
 class LicenseManager:
-    def __init__(self):
+    """Gerencia a licença do dispositivo junto ao backend Supabase.
+
+    Mudanças de escalabilidade (2.0.7):
+    - Singleton via ``get_instance()``: apenas uma instância por processo,
+      evitando múltiplos subprocessos ``powershell`` e múltiplas instâncias
+      de ``SupabaseDesktopClient`` em paralelo.
+    - ``chassi`` cacheado como variável de classe: o subprocess só é lançado
+      uma vez por processo, independentemente de quantas telas usam o manager.
+    - Construtor idempotente: chamar ``LicenseManager()`` diretamente ainda
+      funciona, mas retorna o mesmo estado singleton internamente.
+    """
+
+    # ------------------------------------------------------------------
+    # Controle de singleton
+    # ------------------------------------------------------------------
+    _instance: Optional["LicenseManager"] = None
+    _instance_lock: threading.Lock = threading.Lock()
+    _cached_chassi: str = ""          # hardware ID cacheado entre instâncias
+
+    @classmethod
+    def get_instance(cls) -> "LicenseManager":
+        """Retorna a instância singleton, criando-a na primeira chamada.
+
+        Toda a aplicação deve usar este método para obter o LicenseManager.
+        O construtor direto ``LicenseManager()`` ainda funciona para testes
+        e código legado, mas cria uma instância independente.
+        """
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    instance = object.__new__(cls)
+                    instance._init_once()
+                    cls._instance = instance
+        return cls._instance
+
+    def __init__(self) -> None:
+        """Inicializa a instância (para compatibilidade com código legado).
+
+        Nota: Use ``LicenseManager.get_instance()`` na aplicação para
+        garantir que apenas um objeto compartilhe o estado de licença.
+        """
+        if not hasattr(self, "_initialized"):
+            self._init_once()
+
+    def _init_once(self) -> None:
+        """Inicialização real — executada apenas uma vez por processo."""
+        if getattr(self, "_initialized", False):
+            return
+        self._initialized = True
         self.chassi = self._obter_chassi_maquina()
         self.secure_backend = SupabaseDesktopClient(self.chassi)
         self._last_license_data: Dict[str, Any] = {}
         self._last_system_config: Dict[str, Any] = {}
 
     def _obter_chassi_maquina(self) -> str:
+        """Obtém o UUID de hardware do sistema.
+
+        Usa cache de classe para que o subprocess ``powershell`` seja
+        lançado somente uma vez por processo, mesmo que múltiplas telas
+        instanciem ``LicenseManager()`` no mesmo ciclo de vida.
+        """
+        if LicenseManager._cached_chassi:
+            return LicenseManager._cached_chassi
+
         try:
             output = subprocess.check_output(
-                "wmic csproduct get uuid", shell=True, stderr=subprocess.DEVNULL
+                ["powershell", "-Command", "(Get-CimInstance -Class Win32_ComputerSystemProduct).UUID"], 
+                shell=True, stderr=subprocess.DEVNULL
             ).decode(errors="ignore").splitlines()
             if len(output) > 1:
                 value = output[1].strip()
                 if len(value) >= 10 and value != "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF":
+                    LicenseManager._cached_chassi = value
                     return value
         except Exception:
             pass
-        return str(uuid.getnode())
+
+        fallback = str(uuid.getnode())
+        LicenseManager._cached_chassi = fallback
+        return fallback
 
     @staticmethod
     def _obter_versao_atual() -> str:
@@ -126,6 +188,7 @@ class LicenseManager:
             "gestor": company.get("manager_name") or "",
             "telefone": company.get("phone") or "",
             "enviadas_hoje": int(usage.get("messages_used") or 0),
+            "limite_lote": max(1, min(1000, int(license_data.get("batch_limit") or 1))),
             "limite_diario": int(
                 usage.get("daily_limit") or (6 if status == "trial" else 30)
             ),
@@ -196,7 +259,7 @@ class LicenseManager:
             return True, ""
         if limit == 6:
             return False, "O Modo de Testes permite enviar apenas 6 mensagens por dia."
-        return False, "Você atingiu o limite diário de 30 mensagens do seu plano."
+        return False, f"Você atingiu o limite diário de {limit} mensagens do seu plano."
 
     def registrar_envio(self) -> tuple[bool, str]:
         try:
@@ -213,6 +276,41 @@ class LicenseManager:
         if "trial" in reason:
             return False, "O Modo de Testes permite enviar apenas 6 mensagens por dia."
         return False, "Você atingiu o limite diário de mensagens do seu plano."
+
+    def reservar_envio(self) -> tuple[bool, str, str]:
+        reservation_id = str(uuid.uuid4())
+        try:
+            result = self.secure_backend.reserve_message(reservation_id)
+        except DesktopBackendError as error:
+            if error.code == "NETWORK_ERROR":
+                return False, "Não foi possível reservar o envio. Verifique a internet.", ""
+            return False, "O servidor não autorizou este envio.", ""
+        allowed = bool(result.get("ok") and result.get("allowed", True))
+        if allowed:
+            self._last_license_data = {}
+            return True, "", reservation_id
+        if str(result.get("error") or "").upper() == "DAILY_LIMIT_REACHED":
+            limit = result.get("daily_limit")
+            return False, f"Você atingiu o limite diário de {limit} mensagens.", ""
+        return False, "O servidor não autorizou este envio.", ""
+
+    def confirmar_envio(self, reservation_id: str) -> tuple[bool, str]:
+        try:
+            result = self.secure_backend.confirm_message(reservation_id)
+        except DesktopBackendError:
+            return False, "O envio ocorreu, mas a confirmação da cota ficou pendente."
+        self._last_license_data = {}
+        return bool(result.get("ok")), "" if result.get("ok") else "A confirmação da cota ficou pendente."
+
+    def liberar_reserva_envio(self, reservation_id: str) -> tuple[bool, str]:
+        if not reservation_id:
+            return True, ""
+        try:
+            result = self.secure_backend.release_message(reservation_id)
+        except DesktopBackendError:
+            return False, "Não foi possível devolver a reserva ao servidor neste momento."
+        self._last_license_data = {}
+        return bool(result.get("ok")), "" if result.get("ok") else "A reserva não pôde ser devolvida."
 
     def registrar_log_auditoria(self, telefone: str, tipo: str, cliente: str) -> None:
         event = {

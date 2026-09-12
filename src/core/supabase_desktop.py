@@ -151,7 +151,7 @@ class SupabaseDesktopClient:
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise DesktopBackendError("NETWORK_ERROR") from error
 
-    def redeem_device_link_code(self, link_code: str, user_access_token: str,
+    def redeem_device_link_code(self, link_code: str,
                                 app_version: str = "") -> Dict[str, Any]:
         result = self._request(
             "redeem_device_link_code",
@@ -160,7 +160,6 @@ class SupabaseDesktopClient:
                 "app_version": str(app_version).strip(),
             },
             require_session=False,
-            user_access_token=str(user_access_token).strip(),
         )
         self.save_installation_token(result.get("installation_token"))
         return result
@@ -178,6 +177,15 @@ class SupabaseDesktopClient:
 
     def consume_message(self) -> Dict[str, Any]:
         return self._request("consume_message")
+
+    def reserve_message(self, reservation_id: str) -> Dict[str, Any]:
+        return self._request("reserve_message", {"reservation_id": str(reservation_id)})
+
+    def confirm_message(self, reservation_id: str) -> Dict[str, Any]:
+        return self._request("confirm_message", {"reservation_id": str(reservation_id)})
+
+    def release_message(self, reservation_id: str) -> Dict[str, Any]:
+        return self._request("release_message", {"reservation_id": str(reservation_id)})
 
     def create_pix(self) -> Dict[str, Any]:
         return self._request("create_pix")

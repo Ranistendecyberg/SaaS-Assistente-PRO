@@ -2,6 +2,24 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel, QMessageBox, QPushButton, QTextEdit, QVBoxLayout, QWidget
 
 
+
+from PyQt6.QtCore import QThread, pyqtSignal
+
+class SuggestionThread(QThread):
+    finished = pyqtSignal(bool)
+    
+    def __init__(self, text):
+        super().__init__()
+        self.text = text
+        
+    def run(self):
+        try:
+            from src.core.license_manager import LicenseManager
+            LicenseManager().secure_backend.send_suggestion(self.text)
+            self.finished.emit(True)
+        except Exception:
+            self.finished.emit(False)
+
 class SuggestionsScreen(QWidget):
     def __init__(self):
         super().__init__()
@@ -47,6 +65,7 @@ class SuggestionsScreen(QWidget):
         layout.addWidget(self.btn_send, alignment=Qt.AlignmentFlag.AlignRight)
         layout.addStretch()
 
+
     def enviar_sugestao(self):
         text = self.text_edit.toPlainText().strip()
         if not text:
@@ -55,16 +74,19 @@ class SuggestionsScreen(QWidget):
 
         self.btn_send.setEnabled(False)
         self.btn_send.setText("Enviando...")
-        try:
-            from src.core.license_manager import LicenseManager
-            LicenseManager().secure_backend.send_suggestion(text)
+        
+        self.thread = SuggestionThread(text)
+        self.thread.finished.connect(self.on_sugestao_finished)
+        self.thread.start()
+
+    def on_sugestao_finished(self, success):
+        if success:
             QMessageBox.information(self, "Sucesso", "Muito obrigado! Sua sugestão foi enviada com sucesso.")
             self.text_edit.clear()
-        except Exception:
+        else:
             QMessageBox.warning(
                 self, "Erro de Conexão",
                 "Não foi possível enviar. Verifique sua internet e tente novamente.",
             )
-        finally:
-            self.btn_send.setEnabled(True)
-            self.btn_send.setText("📤 Enviar Sugestão")
+        self.btn_send.setEnabled(True)
+        self.btn_send.setText("📤 Enviar Sugestão")

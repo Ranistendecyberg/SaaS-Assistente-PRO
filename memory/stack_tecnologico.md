@@ -1,5 +1,9 @@
 # Stack Tecnológico — Assistente PRO Desktop
 
+- Recuperação do principal 2.0.5: migração PLpgSQL 022 e account-api v9; autenticação Supabase Auth mais AMR OTP recente. Token aleatório de 32 bytes, hash SHA-256 no banco, credencial local protegida com DPAPI. Gerador Admin 2.0.4 compatível.
+
+- Revisão CPF/CNPJ 2.0.4: validadores Python/TypeScript/PLpgSQL, PostgreSQL 17.11 para testes reais e migração 021; Deno check/test das funções. Backend publicado: account-api v8 e billing-api v13, com autenticação do usuário no código.
+
 - **Linguagem:** Python 3.11+
 - **Interface gráfica:** PyQt6
 - **Navegador incorporado:** PyQt6-WebEngine / QWebEngineView (Chromium)

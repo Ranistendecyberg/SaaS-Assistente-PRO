@@ -61,8 +61,8 @@ class TutorialScreen(QWidget):
              "Cadastre os códigos das suas concessionárias e seus respectivos nomes comerciais.<br><br>"
              "<b>💡 Por que é importante?</b> Com as lojas cadastradas, todos os filtros e relatórios dos Dashboards exibirão automaticamente os nomes amigáveis das concessionárias em vez de apenas números de códigos."),
             
-            ("💳 6. Licenciamento e Recargas", 
-             "<b>• Loja PIX (Recarga):</b> Efetue a renovação ou recarga da sua assinatura com validação em até 5 segundos via QR Code PIX, liberando envios ilimitados.<br>"
+            ("💳 6. Conta empresarial e cobrança",
+             "<b>• Cobrança consolidada:</b> Consulte a assinatura empresarial e gere PIX ou boleto pela área Conta Empresarial.<br>"
              "<b>• Validar Chave de Acesso:</b> Insira chaves promocionais ou de cortesia para resgatar dias extras no seu plano.")
         ]
         

@@ -1,5 +1,7 @@
 import datetime
 import unittest
+import uuid
+from unittest.mock import MagicMock
 
 from src.core.license_manager import LicenseManager
 from src.core.supabase_desktop import DesktopBackendError
@@ -51,6 +53,22 @@ class SupabaseLicenseTests(unittest.TestCase):
     def test_indisponibilidade_nao_vira_migracao(self):
         result = manager_with(FakeBackend(error=DesktopBackendError("NETWORK_ERROR"))).validar_licenca()
         self.assertEqual(result["status"], "erro_conexao")
+
+    def test_reserva_confirma_e_libera_envio_por_id_idempotente(self):
+        backend = MagicMock()
+        backend.reserve_message.return_value = {"ok": True, "allowed": True}
+        backend.confirm_message.return_value = {"ok": True, "reservation_status": "confirmed"}
+        backend.release_message.return_value = {"ok": True, "reservation_status": "released"}
+        manager = manager_with(backend)
+
+        allowed, message, reservation_id = manager.reservar_envio()
+        self.assertTrue(allowed)
+        self.assertEqual(message, "")
+        self.assertEqual(str(uuid.UUID(reservation_id)), reservation_id)
+        backend.reserve_message.assert_called_once_with(reservation_id)
+
+        self.assertEqual(manager.confirmar_envio(reservation_id), (True, ""))
+        self.assertEqual(manager.liberar_reserva_envio(reservation_id), (True, ""))
 
 
 if __name__ == "__main__":

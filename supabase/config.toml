@@ -8,3 +8,11 @@ verify_jwt = false
 
 [functions.account-api]
 verify_jwt = false
+
+[functions.billing-api]
+verify_jwt = false
+
+[functions.cron-worker]
+# O agendamento interno não usa JWT de usuário. Chamadas HTTP manuais são
+# protegidas pelo segredo dedicado CRON_SECRET dentro da função.
+verify_jwt = false

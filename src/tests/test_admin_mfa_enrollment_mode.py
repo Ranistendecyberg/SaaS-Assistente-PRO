@@ -29,7 +29,7 @@ class AdminMfaEnrollmentModeTests(unittest.TestCase):
 
         self.assertIn("self._show_enrollment_success()", enroll_branch)
         self.assertNotIn("self.destroy()", enroll_branch)
-        self.assertIn('text="CONCLUIR"', success_screen)
+        self.assertIn('text="Concluir"', success_screen)
         self.assertIn("command=self.destroy", success_screen)
 
 

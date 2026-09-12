@@ -167,7 +167,7 @@ class TermsDialog(QDialog):
             dados = {
                 "aceito": True,
                 "data_hora": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "versao_termos": "1.6.0"
+                "versao_termos": "2.0.0"
             }
             with open(caminho_aceite, "w", encoding="utf-8") as f:
                 json.dump(dados, f, indent=4)

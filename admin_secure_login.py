@@ -8,19 +8,20 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from admin_supabase import AdminSupabaseClient, friendly_auth_error
+from admin_window_utils import center_window
 
 
-COLOR_BG = "#0B0F17"
-COLOR_CARD = "#161F30"
-COLOR_BORDER = "#24324D"
-COLOR_PRIMARY = "#4F46E5"
-COLOR_PRIMARY_HOVER = "#4338CA"
-COLOR_SUCCESS = "#10B981"
-COLOR_SUCCESS_HOVER = "#059669"
-COLOR_TEXT = "#FFFFFF"
-COLOR_MUTED = "#94A3B8"
+COLOR_BG = "#F4F7FB"
+COLOR_CARD = "#FFFFFF"
+COLOR_BORDER = "#D9E2EF"
+COLOR_PRIMARY = "#2563EB"
+COLOR_PRIMARY_HOVER = "#1D4ED8"
+COLOR_SUCCESS = "#059669"
+COLOR_SUCCESS_HOVER = "#047857"
+COLOR_TEXT = "#0F172A"
+COLOR_MUTED = "#64748B"
 
-ctk.set_appearance_mode("dark")
+ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
 
 
@@ -46,11 +47,10 @@ def _fatal_error(exc_type, exc_value, exc_traceback):
 class SecureLoginApp(ctk.CTk):
     def __init__(self, enroll_only=False):
         super().__init__()
-        self.title("Assistente PRO — Login Seguro")
-        self.geometry("500x560")
+        self.title("Assistente PRO — Gerador Admin 2.0 (Prévia)")
+        self.geometry("520x620")
         self.configure(fg_color=COLOR_BG)
         self.resizable(False, False)
-        self.eval("tk::PlaceWindow . center")
         self.auth_client = AdminSupabaseClient()
         self.enroll_only = bool(enroll_only)
         self.pending_session = None
@@ -64,16 +64,18 @@ class SecureLoginApp(ctk.CTk):
             border_color=COLOR_BORDER,
         )
         card.pack(fill="both", expand=True, padx=30, pady=30)
-        ctk.CTkLabel(card, text="🛡️", font=ctk.CTkFont(size=36)).pack(pady=(30, 8))
+        ctk.CTkLabel(card, text="🔐", width=64, height=64, corner_radius=18,
+                     fg_color="#DBEAFE", text_color=COLOR_PRIMARY,
+                     font=ctk.CTkFont(size=32)).pack(pady=(30, 12))
         ctk.CTkLabel(
             card,
-            text="ACESSO RESTRITO",
+            text="Acesso ao Gerador Admin",
             font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"),
             text_color=COLOR_TEXT,
         ).pack()
         ctk.CTkLabel(
             card,
-            text="Autenticação protegida por Supabase + MFA",
+            text="Gerencie clientes, licenças e versões com segurança.",
             font=ctk.CTkFont(size=12),
             text_color=COLOR_MUTED,
         ).pack(pady=(2, 20))
@@ -81,17 +83,23 @@ class SecureLoginApp(ctk.CTk):
         entry_style = dict(
             width=340,
             height=44,
-            justify="center",
-            fg_color="#0F172A",
+            justify="left",
+            fg_color="#FFFFFF",
             border_color=COLOR_BORDER,
             text_color=COLOR_TEXT,
         )
+        ctk.CTkLabel(card, text="E-mail administrativo", width=340, anchor="w",
+                     text_color=COLOR_MUTED,
+                     font=ctk.CTkFont(size=11, weight="bold")).pack(pady=(2, 4))
         self.entry_email = ctk.CTkEntry(
-            card, placeholder_text="E-mail administrativo", **entry_style
+            card, placeholder_text="nome@empresa.com", **entry_style
         )
         self.entry_email.pack(pady=(0, 12))
+        ctk.CTkLabel(card, text="Senha", width=340, anchor="w",
+                     text_color=COLOR_MUTED,
+                     font=ctk.CTkFont(size=11, weight="bold")).pack(pady=(0, 4))
         self.entry_password = ctk.CTkEntry(
-            card, show="*", placeholder_text="Senha do Supabase", **entry_style
+            card, show="*", placeholder_text="Digite sua senha", **entry_style
         )
         self.entry_password.pack(pady=(0, 12))
         self.entry_code = ctk.CTkEntry(
@@ -102,14 +110,19 @@ class SecureLoginApp(ctk.CTk):
         )
         self.status = ctk.CTkLabel(
             card,
-            text="Sua senha não é armazenada neste computador.",
+            text="🔒  Sua senha não é armazenada neste computador.",
             font=ctk.CTkFont(size=11),
             text_color=COLOR_MUTED,
+            fg_color="#F8FAFC",
+            corner_radius=8,
+            width=340,
+            height=36,
         )
+        self.after(20, lambda: center_window(self, 520, 620))
         self.status.pack(pady=(0, 12))
         self.login_button = ctk.CTkButton(
             card,
-            text="ENTRAR NO PAINEL",
+            text="Entrar com segurança",
             width=340,
             height=44,
             fg_color=COLOR_PRIMARY,
@@ -152,7 +165,7 @@ class SecureLoginApp(ctk.CTk):
             self.entry_password.configure(state="disabled")
             self.entry_code.pack(pady=(0, 12), before=self.status)
             self.entry_code.focus()
-            self.login_button.configure(text="VALIDAR CÓDIGO MFA")
+            self.login_button.configure(text="Validar código MFA")
             self._busy(False, "Digite o código do aplicativo autenticador.")
             return
         self._start_mfa_enrollment()
@@ -196,6 +209,7 @@ class SecureLoginApp(ctk.CTk):
         window.configure(fg_color=COLOR_BG)
         window.grab_set()
         window.protocol("WM_DELETE_WINDOW", lambda: None)
+        window.after(20, lambda: center_window(window, 520, 640, self))
 
         ctk.CTkLabel(
             window,
@@ -254,7 +268,7 @@ class SecureLoginApp(ctk.CTk):
                 except Exception as error:
                     def failed(current=error):
                         confirm_button.configure(
-                            state="normal", text="ATIVAR E ENTRAR"
+                            state="normal", text="Ativar e entrar"
                         )
                         messagebox.showerror(
                             "Falha na verificação",
@@ -267,7 +281,7 @@ class SecureLoginApp(ctk.CTk):
 
         confirm_button = ctk.CTkButton(
             window,
-            text="ATIVAR E ENTRAR",
+            text="Ativar e entrar",
             width=260,
             height=42,
             command=confirm,
@@ -332,6 +346,7 @@ class SecureLoginApp(ctk.CTk):
         window.configure(fg_color=COLOR_BG)
         window.transient(self)
         window.protocol("WM_DELETE_WINDOW", self.destroy)
+        window.after(20, lambda: center_window(window, 470, 330, self))
 
         card = ctk.CTkFrame(
             window,
@@ -348,12 +363,12 @@ class SecureLoginApp(ctk.CTk):
             height=58,
             corner_radius=29,
             fg_color=COLOR_SUCCESS,
-            text_color=COLOR_TEXT,
+            text_color="white",
             font=ctk.CTkFont(size=30, weight="bold"),
         ).pack(pady=(28, 12))
         ctk.CTkLabel(
             card,
-            text="MFA ATIVADO COM SUCESSO",
+            text="MFA ativado com sucesso",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLOR_TEXT,
         ).pack()
@@ -367,7 +382,7 @@ class SecureLoginApp(ctk.CTk):
         ).pack(pady=(10, 20))
         ctk.CTkButton(
             card,
-            text="CONCLUIR",
+            text="Concluir",
             width=280,
             height=42,
             command=self.destroy,

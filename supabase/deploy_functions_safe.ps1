@@ -1,3 +1,8 @@
+param(
+    [ValidateSet("account-api", "admin-api", "billing-api", "desktop-api", "cron-worker", "all")]
+    [string]$FunctionName = "all"
+)
+
 $ErrorActionPreference = "Continue"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -6,8 +11,12 @@ $logPath = Join-Path $logDir "supabase_deploy_sanitized.log"
 
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
-$rawOutput = (& npx --yes supabase@latest functions deploy `
-    --project-ref hnwvtoiiuqagzmuqygkw --use-api 2>&1 | Out-String)
+$deployArgs = @("--yes", "supabase@latest", "functions", "deploy")
+if ($FunctionName -ne "all") {
+    $deployArgs += $FunctionName
+}
+$deployArgs += @("--project-ref", "hnwvtoiiuqagzmuqygkw", "--use-api")
+$rawOutput = (& npx @deployArgs 2>&1 | Out-String)
 $exitCode = $LASTEXITCODE
 
 $sanitized = $rawOutput

@@ -6,9 +6,13 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.license_manager import LicenseManager
-from src.core.supabase_auth import SupabaseUserClient
+from src.core.supabase_auth import (
+    EMAIL_OTP_MAX_LENGTH,
+    EMAIL_OTP_MIN_LENGTH,
+    SupabaseUserClient,
+)
 from src.core.supabase_desktop import DesktopBackendError, friendly_desktop_error
-from src.core.v2_business_rules import is_valid_cnpj
+from src.core.v2_business_rules import is_valid_document
 from src.version import __version__
 
 
@@ -59,6 +63,17 @@ class NewInstallationScreen(QDialog):
             field.setEchoMode(QLineEdit.EchoMode.Password)
         return field
 
+    def reject(self):
+        if self._task is not None and self._task.isRunning():
+            return
+        super().reject()
+
+    def closeEvent(self, event):
+        if self._task is not None and self._task.isRunning():
+            event.ignore()
+            return
+        super().closeEvent(event)
+
     def _build_ui(self):
         self.setStyleSheet("""
             QDialog { background: #F1F5F9; }
@@ -81,19 +96,23 @@ class NewInstallationScreen(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 25px; font-weight: 800; color: #0F172A;")
         card_layout.addWidget(title)
-        subtitle = QLabel("Conta empresarial segura · Versão 2.0")
+        subtitle = QLabel("Conta segura · Pessoa física ou jurídica")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet("font-size: 13px; color: #64748B;")
         card_layout.addWidget(subtitle)
 
         mode_row = QHBoxLayout()
-        self.new_mode_button = QPushButton("Nova empresa")
+        self.new_mode_button = QPushButton("Nova conta")
         self.link_mode_button = QPushButton("Computador adicional")
         self.new_mode_button.clicked.connect(lambda: self._show_mode("new"))
         self.link_mode_button.clicked.connect(lambda: self._show_mode("link"))
         mode_row.addWidget(self.new_mode_button)
         mode_row.addWidget(self.link_mode_button)
         card_layout.addLayout(mode_row)
+        self.login_button = QPushButton("Já tenho conta — Entrar")
+        self.login_button.setStyleSheet("background: white; color: #2563EB; border: 1px solid #CBD5E1;")
+        self.login_button.clicked.connect(self._login_existing_account)
+        card_layout.addWidget(self.login_button)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -136,22 +155,22 @@ class NewInstallationScreen(QDialog):
         layout.setContentsMargins(0, 4, 0, 4)
         layout.setSpacing(7)
         explanation = QLabel(
-            "Cadastre a matriz e confirme seu e-mail. O teste gratuito de 2 dias "
+            "Cadastre sua conta com CPF ou CNPJ e confirme seu e-mail. O teste gratuito de 2 dias "
             "será liberado automaticamente neste computador."
         )
         explanation.setWordWrap(True)
         explanation.setStyleSheet("color: #64748B;")
         layout.addWidget(explanation)
-        self.company = self._field("Ex.: Grupo Auto Motors")
-        self.cnpj = self._field("00.000.000/0000-00")
+        self.company = self._field("Seu nome completo ou nome da empresa")
+        self.cnpj = self._field("CPF (11 dígitos) ou CNPJ (14 dígitos)")
         self.owner = self._field("Nome completo")
         self.phone = self._field("WhatsApp com DDD")
         self.email = self._field("E-mail que será usado no acesso")
         self.password = self._field("Mínimo de 8 caracteres", password=True)
         self.password_confirmation = self._field("Repita a senha", password=True)
         for label, field in (
-            ("Nome da empresa/concessionária", self.company),
-            ("CNPJ da matriz", self.cnpj),
+            ("Seu nome ou nome da empresa", self.company),
+            ("CPF ou CNPJ do titular", self.cnpj),
             ("Proprietário da conta", self.owner),
             ("WhatsApp", self.phone),
             ("E-mail de acesso", self.email),
@@ -175,19 +194,21 @@ class NewInstallationScreen(QDialog):
         layout.setContentsMargins(0, 4, 0, 4)
         layout.setSpacing(9)
         explanation = QLabel(
-            "Entre com um usuário autorizado e informe o código de vínculo "
-            "gerado no computador principal."
+            "No computador principal, abra Conta Empresarial e gere um código "
+            "de ativação. Digite esse código abaixo; não é necessário informar "
+            "e-mail ou senha neste computador."
         )
         explanation.setWordWrap(True)
         explanation.setStyleSheet("color: #64748B;")
         layout.addWidget(explanation)
-        self.link_email = self._field("E-mail de acesso")
-        self.link_password = self._field("Senha", password=True)
-        self.link_code = self._field("PC-...")
-        self._add_field(layout, "E-mail", self.link_email)
-        self._add_field(layout, "Senha", self.link_password)
-        self._add_field(layout, "Código do computador", self.link_code)
-        self.link_button = QPushButton("Entrar e vincular computador")
+        self.link_code = self._field("PC-ABCD-1234")
+        self.link_code.setMaxLength(16)
+        self._add_field(layout, "Código de ativação", self.link_code)
+        hint = QLabel("O código vale por 15 minutos e pode ser usado somente uma vez.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #64748B; font-size: 12px;")
+        layout.addWidget(hint)
+        self.link_button = QPushButton("Ativar este computador")
         self.link_button.setStyleSheet(
             "QPushButton { background: #0F766E; color: white; border: none; }"
             "QPushButton:hover { background: #115E59; }"
@@ -195,10 +216,6 @@ class NewInstallationScreen(QDialog):
         )
         self.link_button.clicked.connect(self._link_existing_company)
         layout.addWidget(self.link_button)
-        recovery = QPushButton("Esqueci minha senha")
-        recovery.setStyleSheet("background: transparent; color: #2563EB; border: none;")
-        recovery.clicked.connect(self._request_recovery)
-        layout.addWidget(recovery)
         self.content_layout.addWidget(self.link_form)
 
     def _build_verification_form(self):
@@ -211,14 +228,14 @@ class NewInstallationScreen(QDialog):
         title.setStyleSheet("font-size: 20px; font-weight: 800; color: #0F172A;")
         layout.addWidget(title)
         self.verification_text = QLabel(
-            "Digite o código de 6 números ou confirme pelo link enviado por e-mail."
+            "Digite o código numérico recebido ou confirme pelo link enviado por e-mail."
         )
         self.verification_text.setWordWrap(True)
         self.verification_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.verification_text)
-        self.email_code = self._field("Código de 6 números")
+        self.email_code = self._field("Código recebido por e-mail")
         self.email_code.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.email_code.setMaxLength(6)
+        self.email_code.setMaxLength(EMAIL_OTP_MAX_LENGTH)
         layout.addWidget(self.email_code)
         self.verify_button = QPushButton("Confirmar e iniciar teste")
         self.verify_button.setStyleSheet(
@@ -250,11 +267,45 @@ class NewInstallationScreen(QDialog):
         self.status.setText("")
 
     def _set_busy(self, busy, text=""):
+        self.login_button.setEnabled(not busy)
         for button in (self.create_button, self.link_button, self.verify_button,
                        self.link_confirmed_button,
                        self.new_mode_button, self.link_mode_button):
             button.setEnabled(not busy)
         self.status.setText(text)
+
+    def _login_existing_account(self):
+        from src.ui.screens.user_login_dialog import UserLoginDialog
+        from src.ui.screens.email_confirmation_dialog import EmailConfirmationDialog
+        if self._task:
+            return
+        if UserLoginDialog(self.auth, self).exec() != QDialog.DialogCode.Accepted:
+            return
+        if EmailConfirmationDialog(self.auth, self).exec() != QDialog.DialogCode.Accepted:
+            return
+        self._run(
+            lambda: self.auth.recover_principal_access(self.manager.get_hardware_id()),
+            self._principal_recovered,
+            "Recuperando o acesso deste computador, sem alterar sua licença...",
+        )
+
+    def _principal_recovered(self, result):
+        token = result.get("installation_token")
+        if not result.get("ok") or not isinstance(token, str) or len(token) != 64:
+            self._show_error(ValueError("Não foi possível confirmar a recuperação. Tente novamente."))
+            return
+        try:
+            self.manager.secure_backend.save_installation_token(token)
+        except Exception:
+            self._show_error(ValueError("Não foi possível salvar o acesso neste computador. Aguarde um minuto e tente novamente."))
+            return
+        self.password.clear()
+        self.password_confirmation.clear()
+        self._set_busy(False)
+        QMessageBox.information(self, "Acesso recuperado",
+            "O acesso deste computador principal foi recuperado.\n"
+            "A licença, a validade e eventuais bloqueios foram preservados.")
+        self.accept()
 
     def _run(self, operation, on_success, busy_text):
         self._set_busy(True, busy_text)
@@ -272,8 +323,8 @@ class NewInstallationScreen(QDialog):
         password = self.password.text()
         if len(company) < 2 or len(owner) < 2 or len(phone) < 10:
             raise ValueError("Preencha corretamente a empresa, o responsável e o WhatsApp.")
-        if not is_valid_cnpj(self.cnpj.text()):
-            raise ValueError("Informe um CNPJ válido para a matriz.")
+        if not is_valid_document(self.cnpj.text()):
+            raise ValueError("Informe um CPF ou CNPJ válido para o titular.")
         if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
             raise ValueError("Informe um e-mail válido.")
         if len(password) < 8:
@@ -321,8 +372,10 @@ class NewInstallationScreen(QDialog):
 
     def _verify_email(self):
         code = "".join(filter(str.isdigit, self.email_code.text()))
-        if len(code) != 6:
-            QMessageBox.warning(self, "Código inválido", "Digite os seis números recebidos por e-mail.")
+        if not EMAIL_OTP_MIN_LENGTH <= len(code) <= EMAIL_OTP_MAX_LENGTH:
+            QMessageBox.warning(
+                self, "Código inválido", "Digite o código numérico recebido por e-mail."
+            )
             return
         self._run(lambda: self.auth.verify_signup(self._pending_email, code),
                   lambda _session: self._complete_trial(), "Confirmando seu e-mail...")
@@ -356,44 +409,38 @@ class NewInstallationScreen(QDialog):
         self.accept()
 
     def _link_existing_company(self):
-        email = self.link_email.text().strip().lower()
-        password = self.link_password.text()
-        code = self.link_code.text().strip().upper()
-        if "@" not in email or not password or len(code) < 20:
-            QMessageBox.warning(self, "Dados incompletos",
-                                "Informe o e-mail, a senha e o código completo do computador.")
+        compact = "".join(character for character in self.link_code.text().upper()
+                          if character.isalnum())
+        if len(compact) == 8:
+            compact = "PC" + compact
+        code = (f"PC-{compact[2:6]}-{compact[6:10]}"
+                if len(compact) == 10 and compact.startswith("PC") else "")
+        allowed = set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        if not code or any(character not in allowed for character in compact[2:]):
+            QMessageBox.warning(
+                self, "Código inválido",
+                "Digite o código de ativação exibido no computador principal.",
+            )
             return
 
-        def operation():
-            session = self.auth.sign_in(email, password)
-            return self.manager.secure_backend.redeem_device_link_code(
-                code, session.access_token, __version__
-            )
-
-        self._run(operation, self._computer_linked,
-                  "Validando acesso e vinculando computador...")
+        self._run(
+            lambda: self.manager.secure_backend.redeem_device_link_code(code, __version__),
+            self._computer_linked,
+            "Validando o código e ativando este computador...",
+        )
 
     def _computer_linked(self, _result):
         self._set_busy(False)
+        if _result.get("payment_required"):
+            QMessageBox.information(self, "Computador vinculado — pagamento pendente",
+                "O vínculo foi concluído. Este computador não está incluído no período já pago. "
+                "Peça ao proprietário para conferir a cobrança atualizada no computador principal. "
+                "Não reutilize um PIX antigo.")
+            self.accept()
+            return
         QMessageBox.information(self, "Computador vinculado",
                                 "Este computador foi vinculado à conta empresarial com sucesso.")
         self.accept()
-
-    def _request_recovery(self):
-        email = self.link_email.text().strip().lower()
-        if "@" not in email:
-            QMessageBox.warning(self, "E-mail necessário", "Informe primeiro seu e-mail de acesso.")
-            return
-        self._run(lambda: self.auth.request_password_recovery(email),
-                  lambda _result: self._recovery_sent(),
-                  "Solicitando recuperação segura...")
-
-    def _recovery_sent(self):
-        self._set_busy(False)
-        QMessageBox.information(
-            self, "Verifique seu e-mail",
-            "Se o endereço estiver cadastrado, você receberá as instruções para criar uma nova senha.",
-        )
 
     def _show_error(self, error):
         self._set_busy(False)
@@ -402,25 +449,30 @@ class NewInstallationScreen(QDialog):
         elif isinstance(error, DesktopBackendError):
             messages = {
                 "SIGNUPS_NOT_ALLOWED": "O cadastro de novas contas ainda não foi liberado no servidor de testes.",
-                "USER_ALREADY_REGISTERED": "Este e-mail já possui conta. Use Computador adicional.",
+                "USER_ALREADY_REGISTERED": "Este e-mail já possui conta. Use Já tenho conta — Entrar.",
                 "EMAIL_CONFIRMATION_REQUIRED": "Confirme o e-mail antes de concluir o cadastro.",
                 "EMAIL_NOT_CONFIRMED": "Abra o link recebido no e-mail e tente novamente.",
                 "EMAIL_NOT_VERIFIED": "Abra o link recebido no e-mail e tente novamente.",
-                "CNPJ_ALREADY_REGISTERED": "Este CNPJ já está vinculado a uma conta empresarial.",
-                "USER_ALREADY_HAS_COMPANY": "Este usuário já pertence a uma empresa.",
-                "INVALID_ONBOARDING": "Confira os dados da empresa, CNPJ e responsável.",
+                "CNPJ_ALREADY_REGISTERED": "Este CPF ou CNPJ já está vinculado a uma conta.",
+                "USER_ALREADY_HAS_COMPANY": "Este usuário já possui conta. Use Já tenho conta — Entrar no computador principal.",
+                "RECOVERY_NOT_ALLOWED": "Este equipamento não foi reconhecido como principal desta conta, ou o vínculo está bloqueado. Use um código para computador adicional ou solicite suporte. Nenhuma licença foi alterada.",
+                "RECOVERY_RATE_LIMITED": "O acesso foi recuperado recentemente. Aguarde um minuto antes de tentar novamente.",
+                "EMAIL_OTP_REQUIRED": "Confirme o código enviado ao seu e-mail e tente novamente.",
+                "INVALID_ONBOARDING": "Confira os dados da conta, CPF ou CNPJ e responsável.",
                 "ONBOARDING_RATE_LIMITED": "Foram feitas muitas tentativas. Aguarde uma hora e tente novamente.",
                 "INVALID_LOGIN_CREDENTIALS": (
-                    "Este e-mail pode já estar cadastrado. Use a senha existente ou, "
-                    "em Computador adicional, solicite a recuperação da senha."
+                    "Use Já tenho conta — Entrar com sua senha existente ou "
+                    "selecione Esqueci minha senha nessa tela."
                 ),
                 "INVALID_CREDENTIALS": (
-                    "Este e-mail pode já estar cadastrado. Use a senha existente ou, "
-                    "em Computador adicional, solicite a recuperação da senha."
+                    "Use Já tenho conta — Entrar com sua senha existente ou "
+                    "selecione Esqueci minha senha nessa tela."
                 ),
                 "OTP_EXPIRED": "O código expirou ou está incorreto. Solicite um novo cadastro.",
                 "LINK_CODE_EXPIRED": "O código expirou. Gere outro no computador principal.",
                 "LINK_CODE_NOT_AVAILABLE": "O código já foi utilizado, revogado ou não existe.",
+                "LINK_CODE_RATE_LIMITED": "Muitas tentativas foram feitas. Aguarde 15 minutos e tente novamente.",
+                "INVALID_LINK_CODE": "O código de ativação não é válido.",
             }
             message = messages.get(error.code, friendly_desktop_error(error))
         else:

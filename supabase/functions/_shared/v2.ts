@@ -24,11 +24,31 @@ export function validEmail(value: unknown): boolean {
   return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+export function validCpf(value: unknown): boolean {
+  const digits = normalizeCnpj(value);
+  if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) return false;
+  let base = digits.slice(0, 9);
+  for (const size of [10, 11]) {
+    const remainder = [...base].reduce((sum, digit, index) => sum + Number(digit) * (size - index), 0) % 11;
+    base += String(remainder < 2 ? 0 : 11 - remainder);
+  }
+  return base === digits;
+}
+
+export function validDocument(value: unknown): boolean {
+  return validCpf(value) || validCnpj(value);
+}
+
 export async function requireCompanyMember(
   client: SupabaseClient,
   userId: string,
   companyId: string,
-  options: { mutation?: boolean; ownerOnly?: boolean; aal?: unknown } = {},
+  options: {
+    mutation?: boolean;
+    ownerOnly?: boolean;
+    requireRecentEmail?: boolean;
+    payload?: Record<string, unknown>;
+  } = {},
 ) {
   if (!companyId) throw new Error("COMPANY_REQUIRED");
   const { data: member, error } = await client.from("company_members")
@@ -42,6 +62,24 @@ export async function requireCompanyMember(
   if (options.mutation && !["owner", "admin"].includes(member.role)) {
     throw new Error("FORBIDDEN");
   }
-  if (options.mutation && options.aal !== "aal2") throw new Error("MFA_REQUIRED");
+  if (options.mutation && options.requireRecentEmail !== false &&
+      !hasRecentEmailConfirmation(options.payload)) {
+    throw new Error("EMAIL_OTP_REQUIRED");
+  }
   return member;
+}
+
+export function hasRecentEmailConfirmation(
+  payload: Record<string, unknown> | undefined,
+  maxAgeSeconds = 12 * 60 * 60,
+): boolean {
+  const methods = Array.isArray(payload?.amr) ? payload.amr : [];
+  const now = Math.floor(Date.now() / 1000);
+  return methods.some((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    const method = String((entry as Record<string, unknown>).method || "");
+    const timestamp = Number((entry as Record<string, unknown>).timestamp || 0);
+    return method === "otp" && Number.isFinite(timestamp) &&
+      timestamp <= now + 60 && now - timestamp <= maxAgeSeconds;
+  });
 }

@@ -7,7 +7,7 @@ $secureToken = Read-Host "Token" -AsSecureString
 $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
 try {
     $env:SUPABASE_ACCESS_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPointer)
-    & (Join-Path $PSScriptRoot "deploy_functions_safe.ps1")
+    & (Join-Path $PSScriptRoot "deploy_functions_safe.ps1") -FunctionName "billing-api"
 }
 finally {
     Remove-Item Env:\SUPABASE_ACCESS_TOKEN -ErrorAction SilentlyContinue

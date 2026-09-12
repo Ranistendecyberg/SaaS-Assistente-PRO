@@ -4,7 +4,10 @@ import { randomToken, requireAdmin, sha256 } from "../_shared/security.ts";
 const MUTATIONS = new Set([
   "create_company", "create_installation", "create_key", "revoke_key",
   "update_license", "set_installation_status", "update_system_config",
-  "delete_installation",
+  "delete_installation", "update_enterprise_subscription",
+  "set_enterprise_device_status",
+  "transfer_principal",
+  "resolve_billing_refund",
 ]);
 
 Deno.serve(async (req) => {
@@ -17,7 +20,7 @@ Deno.serve(async (req) => {
 
     if (action === "list_installations") {
       const { data, error } = await client.from("installations")
-        .select("id, hardware_id, status, app_version, online, last_seen_at, created_at, companies(name, manager_name, phone), licenses(status, license_type, expires_at, extra_messages, monthly_price, report_links, adjustment_notice, detailed_diagnostics_until)")
+        .select("id, hardware_id, status, app_version, online, last_seen_at, created_at, companies(name, manager_name, phone), licenses(status, license_type, expires_at, extra_messages, monthly_price, report_links, adjustment_notice, detailed_diagnostics_until, daily_message_limit, batch_limit)")
         .order("created_at", { ascending: false }).limit(500);
       if (error) throw error;
       return jsonResponse({ ok: true, installations: data });
@@ -36,6 +39,106 @@ Deno.serve(async (req) => {
         .eq("singleton", true).single();
       if (error) throw error;
       return jsonResponse({ ok: true, system: data });
+    }
+
+    if (action === "list_billing_reconciliation") {
+      const { data, error } = await client.from("billing_reconciliation_cases")
+        .select("attempt_id, company_id, reason, received_amount, provider_status, created_at, companies(name)")
+        .is("resolved_at", null).order("created_at", { ascending: false }).limit(200);
+      if (error) throw error;
+      return jsonResponse({ ok: true, cases: data || [] });
+    }
+
+    if (action === "resolve_billing_refund") {
+      if (admin.role !== "owner") return jsonResponse({error:"OWNER_REQUIRED"},403);
+      const attemptId=cleanText(body.attempt_id,64);
+      const {data: attempt,error}=await client.from("billing_payment_attempts")
+        .select("id,payment_method,provider_order_id,external_reference").eq("id",attemptId).single();
+      if(error) throw error;
+      const token=Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN");
+      if(!token || !attempt.provider_order_id) throw new Error("SERVER_CONFIGURATION_ERROR");
+      const providerResponse=await fetch(`https://api.mercadopago.com/v1/${attempt.payment_method === "pix" ? "payments" : "orders"}/${encodeURIComponent(attempt.provider_order_id)}`,{
+        headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000),
+      });
+      if(!providerResponse.ok) throw new Error("PAYMENT_PROVIDER_ERROR");
+      const payment=await providerResponse.json();
+      if(payment.status !== "refunded" || payment.external_reference !== attempt.external_reference) {
+        return jsonResponse({error:"REFUND_NOT_CONFIRMED"},409);
+      }
+      const {data,error: resolutionError}=await client.rpc("resolve_billing_refund_server",{
+        p_actor_user_id:user.id,p_attempt_id:attemptId,
+      });
+      if(resolutionError) throw resolutionError;
+      return jsonResponse(data?.ok ? data : {error:data?.error || "RECONCILIATION_NOT_PENDING"},data?.ok ? 200 : 409);
+    }
+
+    if (action === "list_enterprises") {
+      const { data: companies, error } = await client.from("companies")
+        .select("id, name, manager_name, phone, active, created_at, business_units(id, unit_type, display_name, cnpj, active), company_subscriptions(id, status, pricing_origin, base_price, additional_seat_price, trial_expires_at, current_period_start, current_period_end), installations(id, business_unit_id, hardware_id, status, app_version, online, last_seen_at, device_class, billing_status, removal_scheduled_for, created_at, licenses(status, license_type, expires_at, monthly_price))")
+        .order("created_at", { ascending: false }).limit(500);
+      if (error) throw error;
+      const { data: members, error: memberError } = await client.from("company_members")
+        .select("company_id, role, active").limit(2000);
+      if (memberError) throw memberError;
+      const memberCounts = new Map<string, Record<string, number>>();
+      for (const member of members || []) {
+        if (!member.active) continue;
+        const companyId = String(member.company_id || "");
+        const counts = memberCounts.get(companyId) || { owner: 0, admin: 0, operator: 0 };
+        const role = String(member.role || "");
+        if (role in counts) counts[role] += 1;
+        memberCounts.set(companyId, counts);
+      }
+      return jsonResponse({
+        ok: true,
+        enterprises: (companies || []).map((company: Record<string, unknown>) => ({
+          ...company,
+          member_counts: memberCounts.get(String(company.id || "")) || { owner: 0, admin: 0, operator: 0 },
+        })),
+      });
+    }
+
+    if (action === "update_enterprise_subscription") {
+      const companyId = cleanText(body.company_id, 64);
+      const status = cleanText(body.status, 20);
+      const basePrice = Number(body.base_price);
+      const additionalSeatPrice = Number(body.additional_seat_price);
+      const currentPeriodEnd = cleanText(body.current_period_end, 64);
+      if (!companyId || !["trial", "active", "past_due", "suspended", "cancelled"].includes(status)
+          || !Number.isFinite(basePrice) || basePrice < 0
+          || basePrice > 1000000
+          || !Number.isFinite(additionalSeatPrice) || additionalSeatPrice < 0
+          || additionalSeatPrice > 1000000
+          || !currentPeriodEnd || Number.isNaN(Date.parse(currentPeriodEnd))) {
+        return jsonResponse({ error: "INVALID_ENTERPRISE_UPDATE" }, 400);
+      }
+      const { data, error } = await client.rpc("admin_update_company_subscription_server", {
+        p_actor_user_id: user.id,
+        p_company_id: companyId,
+        p_status: status,
+        p_base_price: basePrice,
+        p_additional_seat_price: additionalSeatPrice,
+        p_current_period_end: currentPeriodEnd,
+      });
+      if (error) throw error;
+      if (!data?.ok) return jsonResponse({ error: data?.error || "ENTERPRISE_UPDATE_FAILED" }, 409);
+      return jsonResponse(data);
+    }
+
+    if (action === "set_enterprise_device_status") {
+      const installationId = cleanText(body.installation_id, 64);
+      const status = cleanText(body.status, 20);
+      if (!installationId || !["active", "blocked"].includes(status)) {
+        return jsonResponse({ error: "INVALID_DEVICE_STATUS" }, 400);
+      }
+      const { data, error } = await client.rpc("admin_set_enterprise_device_status_server", {
+        p_actor_user_id: user.id,
+        p_installation_id: installationId,
+        p_status: status,
+      });
+      if (error) throw error;
+      if (!data?.ok) return jsonResponse({ error: data?.error || "DEVICE_STATUS_UPDATE_FAILED" }, 409);
+      return jsonResponse(data);
     }
 
     if (action === "list_suggestions") {
@@ -65,10 +168,28 @@ Deno.serve(async (req) => {
     if (action === "update_license") {
       const hardwareId = cleanText(body.hardware_id, 128);
       const { data: installation, error: findError } = await client.from("installations")
-        .select("id").eq("hardware_id", hardwareId).maybeSingle();
+        .select("id, company_id").eq("hardware_id", hardwareId).maybeSingle();
       if (findError) throw findError;
       if (!installation) return jsonResponse({ error: "INSTALLATION_NOT_FOUND" }, 404);
+      const { data: enterprise, error: enterpriseError } = await client.from("company_subscriptions")
+        .select("id").eq("company_id",installation.company_id).maybeSingle();
+      if (enterpriseError) throw enterpriseError;
+      if (enterprise && ["expires_at","monthly_price","status","license_type"].some(key => body[key] !== undefined)) {
+        return jsonResponse({error:"ENTERPRISE_BILLING_MANAGED"},409);
+      }
       const changes: Record<string, unknown> = {};
+      for (const key of ["daily_message_limit", "batch_limit"]) {
+        if (body[key] === undefined) continue;
+        if (key === "daily_message_limit" && body[key] === null) {
+          changes[key] = null;
+          continue;
+        }
+        const limit = Number(body[key]);
+        if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+          return jsonResponse({ error: "INVALID_MESSAGE_LIMIT" }, 400);
+        }
+        changes[key] = limit;
+      }
       if (body.expires_at != null) {
         const expiresAt = cleanText(body.expires_at, 64);
         if (Number.isNaN(Date.parse(expiresAt))) return jsonResponse({ error: "INVALID_EXPIRY" }, 400);
@@ -120,7 +241,7 @@ Deno.serve(async (req) => {
       changes.updated_at = new Date().toISOString();
       const { data, error } = await client.from("licenses").update(changes)
         .eq("installation_id", installation.id)
-        .select("status, license_type, expires_at, extra_messages, monthly_price, report_links, adjustment_notice, detailed_diagnostics_until")
+        .select("status, license_type, expires_at, extra_messages, monthly_price, report_links, adjustment_notice, detailed_diagnostics_until, daily_message_limit, batch_limit")
         .single();
       if (error) throw error;
       await audit(client, user.id, "license.updated", "installation", installation.id, {
@@ -134,6 +255,21 @@ Deno.serve(async (req) => {
       const status = cleanText(body.status, 20);
       if (!["pending", "active", "blocked", "revoked"].includes(status)) {
         return jsonResponse({ error: "INVALID_INSTALLATION_STATUS" }, 400);
+      }
+      const { data: selected, error: selectedError } = await client.from("installations")
+        .select("id,company_id").eq("hardware_id",hardwareId).maybeSingle();
+      if (selectedError) throw selectedError;
+      if (!selected) return jsonResponse({error:"INSTALLATION_NOT_FOUND"},404);
+      const {data: enterprise,error: enterpriseError} = await client.from("company_subscriptions")
+        .select("id").eq("company_id",selected.company_id).maybeSingle();
+      if (enterpriseError) throw enterpriseError;
+      if (enterprise) {
+        if (!["active","blocked"].includes(status)) return jsonResponse({error:"ENTERPRISE_BILLING_MANAGED"},409);
+        const {data,error} = await client.rpc("admin_set_enterprise_device_status_server",{
+          p_actor_user_id:user.id,p_installation_id:selected.id,p_status:status,
+        });
+        if(error) throw error;
+        return jsonResponse(data?.ok ? data : {error:data?.error || "DEVICE_STATUS_UPDATE_FAILED"}, data?.ok ? 200 : 409);
       }
       const { data, error } = await client.from("installations").update({
         status, token_revoked_at: status === "revoked" ? new Date().toISOString() : null,
@@ -297,10 +433,24 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true, key: data, code }, 201);
     }
 
+    
+    if (action === "transfer_principal") {
+      const companyId = cleanText(body.company_id, 64);
+      const installationId = cleanText(body.installation_id, 64);
+      const { data, error } = await client.rpc("admin_transfer_principal_server", {
+        p_company_id: companyId,
+        p_new_principal_installation_id: installationId,
+      });
+      if (error) throw error;
+      return jsonResponse(data, data?.ok ? 200 : 400);
+    }
+
     return jsonResponse({ error: "UNKNOWN_ACTION" }, 400);
   } catch (error) {
-    const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
-    const status = code === "UNAUTHORIZED" ? 401 : code === "FORBIDDEN" ? 403 : code === "MFA_REQUIRED" ? 428 : 500;
+    const databaseMessage = error && typeof error === "object" ? String((error as any).message || "") : "";
+    const code = error instanceof Error ? error.message : databaseMessage;
+    const status = code === "UNAUTHORIZED" ? 401 : code === "FORBIDDEN" ? 403 : code === "MFA_REQUIRED" ? 428
+      : code === "ENTERPRISE_DEVICE_DELETE_FORBIDDEN" ? 409 : 500;
     return jsonResponse({ error: status === 500 ? "INTERNAL_ERROR" : code }, status);
   }
 });

@@ -1,4 +1,4 @@
-"""Assistente independente que conclui a atualização sem reiniciar o SaaS."""
+"""Assistente independente que instala a atualização e reabre o SaaS."""
 
 from __future__ import annotations
 
@@ -58,7 +58,21 @@ def show_message(text: str, title: str, error: bool = False) -> None:
     ctypes.windll.user32.MessageBoxW(None, text, title, style)
 
 
-def run_update(installer_path: str, version: str, parent_pid: int) -> int:
+def launch_updated_app(launch_path: str) -> bool:
+    """Abre a instalação recém-atualizada e encerra o assistente."""
+    normalized_path = os.path.abspath(launch_path)
+    if not os.path.isfile(normalized_path):
+        return False
+    subprocess.Popen(
+        [normalized_path],
+        cwd=os.path.dirname(normalized_path),
+        close_fds=True,
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+    )
+    return True
+
+
+def run_update(installer_path: str, version: str, parent_pid: int, launch_path: str) -> int:
     if not wait_for_process_exit(parent_pid):
         show_message(
             "O SaaS ainda não foi totalmente encerrado. Aguarde alguns segundos e "
@@ -85,11 +99,22 @@ def run_update(installer_path: str, version: str, parent_pid: int) -> int:
         )
         return completed.returncode or 4
 
-    show_message(
-        f"A versão {version} foi instalada com sucesso.\n\n"
-        "Agora você já pode abrir o SaaS Assistente PRO pelo atalho da Área de Trabalho.",
-        "Atualização concluída",
-    )
+    try:
+        if not launch_updated_app(launch_path):
+            raise FileNotFoundError(launch_path)
+    except Exception:
+        show_message(
+            f"A versão {version} foi instalada, mas o sistema não conseguiu abrir "
+            "automaticamente. Abra o SaaS Assistente PRO pelo atalho da Área de Trabalho.",
+            "Atualização instalada",
+            error=True,
+        )
+        return 5
+
+    try:
+        os.remove(installer_path)
+    except OSError:
+        pass
     return 0
 
 
@@ -98,8 +123,9 @@ def main() -> int:
     parser.add_argument("--installer", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--parent-pid", type=int, default=0)
+    parser.add_argument("--launch-path", required=True)
     args = parser.parse_args()
-    return run_update(args.installer, args.version, args.parent_pid)
+    return run_update(args.installer, args.version, args.parent_pid, args.launch_path)
 
 
 if __name__ == "__main__":

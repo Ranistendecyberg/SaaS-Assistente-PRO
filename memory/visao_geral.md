@@ -1,5 +1,9 @@
 # Visão Geral do Sistema Desktop — Assistente PRO
 
+A revisão 2.0.5 acrescenta "Já tenho conta — Entrar" para restaurar o acesso ao principal existente após perda da credencial local. Exige senha e OTP do proprietário, sem novo cadastro e sem alteração da licença ou do período contratado.
+
+A revisão 2.0.4 permite cadastro de pessoa física com CPF ou pessoa jurídica com CNPJ. A conta continua agregando computador principal, adicionais e cobrança consolidada; ter CPF não exige inventar empresa ou CNPJ. Confirmação de e-mail e licença por computador permanecem obrigatórias.
+
 O Assistente PRO é uma aplicação Desktop para Windows voltada às concessionárias Honda. Seu objetivo é automatizar a extração de dados do myHonda/Salesforce, organizar pesquisas de satisfação TSI (Oficina/Pós-Venda) e SSI (Vendas), gerar os links Medallia correspondentes e realizar os disparos pelo WhatsApp Web.
 
 ## Fluxo principal
