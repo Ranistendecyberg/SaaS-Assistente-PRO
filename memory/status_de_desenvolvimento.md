@@ -13,6 +13,7 @@
 - `pg_cron` 1.6.4 habilitado e job `saas-hourly-maintenance` ativo a cada hora para as três rotinas de limpeza em lote.
 - Código publicado na `main` e release pública `v2.1.3` criada no GitHub. O asset remoto confirmou 201.277.520 bytes e SHA-256 `6cc9223ca379cef0736775e708673973a445448c9599d6de6087e439af8d4176`.
 - OTA ativado no Supabase como opcional: `current_version=2.1.3`, `minimum_version=0.0.0`, `update_required=false`, com URL pública e SHA-256 conferidos no postflight.
+- Site público atualizado no mesmo endereço: botões apontam diretamente para o instalador 2.1.3 e a marca do cabeçalho/rodapé usa o ícone oficial do aplicativo. Publicação Sites versão 2 concluída com sucesso.
 - Análise completa e limites residuais registrados em `memory/analise_escalabilidade_2026-09-11.md`. O instalador ainda não está assinado digitalmente, repetindo o modelo de distribuição da 1.9.6 com possível aviso do SmartScreen.
 
 ## Otimizações de escalabilidade — 11/09/2026
