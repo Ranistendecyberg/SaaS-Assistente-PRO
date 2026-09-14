@@ -708,3 +708,25 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - OTA atualizado como opcional (`current_version=2.1.4`, `minimum_version=0.0.0`, `update_required=false`) com URL e SHA-256 confirmados pelo retorno do Supabase.
 - Site público publicado como versão Sites 5 no mesmo endereço. Resposta HTTPS 200 confirmou o texto 2.1.4 e o novo instalador, sem referência ao instalador 2.1.3.
 - E-mail público de suporte atualizado em 14/09/2026 para `berg.suportetr@gmail.com` em todos os links de contato e condições. Sites versão 6 publicada; conferência HTTPS confirmou o novo endereço e ausência do e-mail anterior.
+
+## Manual do usuário 2.1.4 — 14/09/2026
+
+- Manual operacional completo criado em `docs/Manual_do_Usuario_SaaS_Assistente_PRO_2.1.4.docx`, com 23 páginas sobre primeiro acesso, licenças, limites, cobrança, menus, myHonda, auditores SSI/TSI, fila, disparos, modelos, dashboards, configurações, conta empresarial, computadores, segurança, suporte e solução de problemas.
+- Regra temporal confirmada pelo proprietário e mantida sem mudança no código: dias 1, 2 e 3 consultam mês atual e anterior; a partir do dia 4, somente o mês atual. O texto anterior de cinco dias foi reconhecido como informação incorreta.
+- Documento renderizado pelo Microsoft Word e todas as 23 páginas inspecionadas visualmente após correção de numeração e remoção de página em branco.
+
+## Correção da busca de clientes — 14/09/2026
+
+- Corrigido o campo de busca da fila, que herdava texto branco sobre fundo branco e tornava a digitação invisível.
+- A filtragem agora recebe explicitamente o texto emitido pelo campo, converte valores de cliente com segurança e normaliza maiúsculas, acentos e espaços; por exemplo, `jose` encontra `JOSÉ`.
+- Teste funcional novo confirmou o recorte por nome e pelo tipo ativo SSI/TSI. Suíte completa aprovada com **203 testes**.
+- A correção está no código-fonte e ainda precisa ser empacotada/publicada em uma versão posterior à 2.1.4 para chegar às instalações existentes.
+
+## Atualização 2.1.5 para teste OTA — 14/09/2026
+
+- Versão coordenada atualizada para 2.1.5 e notas de lançamento criadas.
+- Build oficial concluído após teste obrigatório do executável empacotado.
+- Instalador gerado em `dist/Instalador_SaaS_Assistente_PRO_v2.1.5.exe`, com 247.066.662 bytes e SHA-256 `bf1b4bc16172609224f6ace61bf0297db8aa3a6a04c9155de36c0db27fae8e9e`.
+- Manifesto `dist/release_v2.1.5.json` conferido contra tamanho e hash reais.
+- Instalação silenciosa em diretório isolado e teste de abertura do executável instalado aprovados.
+- Pendente neste registro: publicar código/release e anunciar a versão via OTA opcional para realizar o teste físico 2.1.4 → 2.1.5.

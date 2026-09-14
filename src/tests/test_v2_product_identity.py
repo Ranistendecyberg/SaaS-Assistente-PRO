@@ -23,6 +23,22 @@ class V2ProductIdentityTests(unittest.TestCase):
         self.assertIn("Cobrança consolidada", source)
         self.assertNotIn("Loja PIX (Recarga)", source)
 
+    def test_client_search_has_explicit_readable_text_colors(self):
+        source = (ROOT / "src/ui/screens/extraction_screen.py").read_text("utf-8")
+        search_style = source.split("self.search_box.setStyleSheet", 1)[1].split(
+            "self.search_box.textChanged", 1
+        )[0]
+        self.assertIn("background-color: #FFFFFF", search_style)
+        self.assertIn("color: #0F172A", search_style)
+        self.assertIn("selection-background-color: #2563EB", search_style)
+        self.assertIn("selection-color: #FFFFFF", search_style)
+
+    def test_client_search_accepts_text_signal_and_normalizes_names(self):
+        source = (ROOT / "src/ui/screens/extraction_screen.py").read_text("utf-8")
+        self.assertIn("def filtrar_lista(self, _texto=None):", source)
+        self.assertIn("texto_busca = _normalizar_texto_busca(self.search_box.text())", source)
+        self.assertIn("texto_busca not in _normalizar_texto_busca(cliente)", source)
+
 
 if __name__ == "__main__":
     unittest.main()

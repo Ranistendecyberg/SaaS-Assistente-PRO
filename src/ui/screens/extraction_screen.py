@@ -1,5 +1,6 @@
 import os
 import re
+import unicodedata
 import urllib.parse
 from bs4 import BeautifulSoup
 from PyQt6.QtWidgets import (
@@ -17,6 +18,15 @@ from src.core.database import DatabaseManager
 from src.core.telemetry import TelemetryClient, anonymous_id, record_event
 
 _DEV_MODE_HASH = "2a48d3dea06bb97c2ceeec84aff334a2769d912c308a9f9680d38053d078de62" # '@1234'
+
+
+def _normalizar_texto_busca(valor):
+    """Compara nomes sem depender de maiúsculas, espaços ou acentos."""
+    texto = unicodedata.normalize("NFKD", str(valor or ""))
+    sem_acentos = "".join(
+        char for char in texto if not unicodedata.combining(char)
+    )
+    return " ".join(sem_acentos.casefold().split())
 
 class ExtractionScreen(QWidget):
     sig_dispatch_whatsapp = pyqtSignal(str, str)
@@ -199,7 +209,22 @@ class ExtractionScreen(QWidget):
         
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("🔍 Buscar cliente por nome...")
-        self.search_box.setStyleSheet("border: 1px solid #E2E8F0; border-radius: 5px; padding: 8px; font-size: 13px; margin: 5px 10px;")
+        self.search_box.setStyleSheet("""
+            QLineEdit {
+                background-color: #FFFFFF;
+                color: #0F172A;
+                border: 1px solid #CBD5E1;
+                border-radius: 5px;
+                padding: 8px;
+                font-size: 13px;
+                margin: 5px 10px;
+                selection-background-color: #2563EB;
+                selection-color: #FFFFFF;
+            }
+            QLineEdit:focus {
+                border: 2px solid #2563EB;
+            }
+        """)
         self.search_box.textChanged.connect(self.filtrar_lista)
         layout_fila.addWidget(self.search_box)
 
@@ -1908,7 +1933,7 @@ class ExtractionScreen(QWidget):
 
         sinais_bloqueados = self.list_widget.blockSignals(True)
         self.list_widget.clear()
-        texto_busca = self.search_box.text().strip().lower()
+        texto_busca = _normalizar_texto_busca(self.search_box.text())
         tipo_filtro = "SSI" if self.combo_tipo.currentIndex() == 0 else "TSI"
         
         # Primeiro, filtramos os itens que devem aparecer na tela mantendo o indice original
@@ -1917,8 +1942,8 @@ class ExtractionScreen(QWidget):
             if item.get("tipo") != tipo_filtro:
                 continue
                 
-            cliente = item.get("cliente", "Desconhecido")
-            if texto_busca and texto_busca not in cliente.lower():
+            cliente = str(item.get("cliente") or "Desconhecido")
+            if texto_busca and texto_busca not in _normalizar_texto_busca(cliente):
                 continue
                 
             itens_para_exibir.append((i, item))
@@ -1933,8 +1958,8 @@ class ExtractionScreen(QWidget):
         
         visiveis = 0
         for i, item in itens_para_exibir:
-            cliente = item.get("cliente", "Desconhecido")
-            info_extra = item.get("os", "")
+            cliente = str(item.get("cliente") or "Desconhecido")
+            info_extra = str(item.get("os") or "")
             status_prefix = ""
             flags = (Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled
                      | Qt.ItemFlag.ItemIsSelectable)
@@ -1973,7 +1998,8 @@ class ExtractionScreen(QWidget):
         self.lbl_fila.setText(f"  Fila de Disparo ({visiveis} Registros)")
         self._atualizar_resumo_selecao()
         
-    def filtrar_lista(self):
+    def filtrar_lista(self, _texto=None):
+        """Atualiza imediatamente a fila ao receber o texto do QLineEdit."""
         self.atualizar_lista_ui()
         
     def ao_alterar_selecao_unica(self, item_alterado):

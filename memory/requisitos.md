@@ -8,7 +8,7 @@
 2. Permitir login no myHonda/Salesforce pelo navegador incorporado e conservar a sessão em cache local.
 3. Extrair em cadeia as filas SSI, TSI e os respectivos auditores.
 4. Detectar tabelas carregadas dinamicamente, incluindo conteúdo em iframes, Shadow DOM e listas com rolagem virtual.
-5. Aplicar filtros temporais adequados ao mês vigente, mês anterior e histórico.
+5. Aplicar filtros temporais adequados ao mês vigente, mês anterior e histórico. Nos dias 1, 2 e 3 de cada mês, os auditores SSI e TSI devem consultar o mês atual e o anterior; a partir do dia 4, devem consultar somente o mês atual.
 6. Extrair dados de clientes, lojas, OSs/propostas, telefones, veículos, consultores/vendedores e links de pesquisa.
 7. Sanitizar telefones brasileiros e sinalizar números inválidos ou fixos.
 8. Impedir duplicidade de envio para a mesma OS ou proposta.
