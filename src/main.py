@@ -150,10 +150,12 @@ def main():
         from src.core.updater import Updater
         from src.version import __version__
         CURRENT_VERSION = __version__
-        updater = Updater(CURRENT_VERSION)
-        updater.checar_atualizacao(window)
+        window._ota_updater = Updater(CURRENT_VERSION)
+        # Executar a checagem somente depois que o loop principal do Qt estiver
+        # ativo permite que QApplication.quit() finalize o WebEngine normalmente.
+        QTimer.singleShot(500, lambda: window._ota_updater.checar_atualizacao(window))
         
-        sys.exit(app.exec())
+        return app.exec()
     else:
         sys.exit(0)
 

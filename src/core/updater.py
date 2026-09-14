@@ -5,6 +5,8 @@ import subprocess
 import time
 import hashlib
 import re
+import shutil
+import tempfile
 from urllib.parse import urlparse
 from PyQt6.QtWidgets import (
     QMessageBox, QApplication, QDialog, QVBoxLayout, 
@@ -119,6 +121,31 @@ def resolve_update_assistant_path():
     """Localiza o assistente independente empacotado junto com o SaaS."""
     base_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.executable)))
     return os.path.join(base_dir, "SaaS Update Assistant.exe")
+
+
+def stage_update_assistant(helper_path=None, staging_dir=None, parent_pid=None):
+    """Copia o assistente para fora do ``_MEIPASS`` antes de executá-lo.
+
+    No modo one-file, iniciar um executável que está dentro de ``_MEIPASS``
+    mantém a própria pasta temporária do aplicativo bloqueada no Windows. A
+    cópia externa permite que o bootloader remova ``_MEI*`` normalmente.
+    """
+    source = os.path.abspath(str(helper_path or resolve_update_assistant_path()))
+    if not os.path.isfile(source):
+        raise FileNotFoundError("O Assistente de Atualização não foi encontrado nesta instalação.")
+
+    destination_dir = os.path.abspath(
+        str(staging_dir or os.path.join(tempfile.gettempdir(), "SaaS_Intelligence_Update"))
+    )
+    os.makedirs(destination_dir, exist_ok=True)
+    destination = os.path.join(
+        destination_dir,
+        f"SaaS_Update_Assistant_{int(parent_pid or os.getpid())}.exe",
+    )
+    shutil.copy2(source, destination)
+    if os.path.getsize(destination) != os.path.getsize(source):
+        raise OSError("A cópia temporária do Assistente de Atualização ficou incompleta.")
+    return destination
 
 
 def resolve_installed_app_path():
@@ -361,9 +388,13 @@ class UpdateDownloadDialog(QDialog):
             return
 
         try:
+            staged_assistant = stage_update_assistant(parent_pid=os.getpid())
             subprocess.Popen(
                 build_update_assistant_command(
-                    installer_path, self.nova_versao, parent_pid=os.getpid()
+                    installer_path,
+                    self.nova_versao,
+                    parent_pid=os.getpid(),
+                    helper_path=staged_assistant,
                 ),
                 close_fds=True,
                 creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
@@ -373,9 +404,10 @@ class UpdateDownloadDialog(QDialog):
             return
 
         # O assistente aguarda este processo terminar, instala e abre a versão nova.
+        # A saída normal é necessária para o Qt/WebEngine liberar DLLs e processos
+        # filhos antes que o bootloader do PyInstaller remova a pasta _MEI.
         QApplication.closeAllWindows()
         QApplication.quit()
-        os._exit(0)
 
     def _on_error(self, err_msg):
         self.lbl_status.setText(f"Erro no download: {err_msg}")

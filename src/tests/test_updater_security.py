@@ -10,6 +10,7 @@ from src.core.updater import (
     build_silent_installer_command,
     build_update_assistant_command,
     resolve_installed_app_path,
+    stage_update_assistant,
     validate_installer_file,
 )
 from update_completion_helper import installer_command, launch_updated_app
@@ -67,6 +68,33 @@ class UpdaterSecurityTests(unittest.TestCase):
         self.assertIn("--parent-pid", command)
         self.assertIn("--launch-path", command)
         self.assertIn(r"C:\Program Files\SaaS\SaaS Assistente PRO.exe", command)
+
+    def test_update_assistant_is_staged_outside_onefile_directory(self):
+        with tempfile.TemporaryDirectory() as onefile_dir, tempfile.TemporaryDirectory() as staging_dir:
+            bundled_helper = os.path.join(onefile_dir, "SaaS Update Assistant.exe")
+            with open(bundled_helper, "wb") as helper_file:
+                helper_file.write(b"MZ" + (b"helper" * 64))
+
+            staged_helper = stage_update_assistant(
+                helper_path=bundled_helper,
+                staging_dir=staging_dir,
+                parent_pid=4321,
+            )
+
+            self.assertEqual(os.path.dirname(staged_helper), os.path.abspath(staging_dir))
+            self.assertNotEqual(os.path.dirname(staged_helper), os.path.abspath(onefile_dir))
+            self.assertEqual(Path(staged_helper).read_bytes(), Path(bundled_helper).read_bytes())
+
+    def test_update_shutdown_does_not_bypass_qt_cleanup(self):
+        source = Path("src/core/updater.py").read_text(encoding="utf-8")
+        self.assertNotIn("os._exit(0)", source)
+        self.assertIn("staged_assistant = stage_update_assistant", source)
+
+    def test_ota_check_runs_after_qt_event_loop_starts(self):
+        source = Path("src/main.py").read_text(encoding="utf-8")
+        scheduled = source.index("QTimer.singleShot(500")
+        event_loop = source.index("return app.exec()")
+        self.assertLess(scheduled, event_loop)
 
     def test_default_launch_path_targets_per_user_installation(self):
         path = resolve_installed_app_path()

@@ -733,3 +733,14 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Asset remoto confirmado com 236 MB e digest SHA-256 `bf1b4bc16172609224f6ace61bf0297db8aa3a6a04c9155de36c0db27fae8e9e`, idêntico ao manifesto local.
 - Supabase atualizado e confirmado com `current_version=2.1.5`, `minimum_version=0.0.0`, `update_required=false`, URL pública do instalador e o mesmo SHA-256.
 - A consulta de simulação pelo cliente local não pôde concluir o teste autenticado porque a sessão de instalação desta máquina retornou `UNAUTHORIZED`. O teste físico 2.1.4 → 2.1.5 permanece pronto para uma instalação com licença ativa.
+
+## Hotfix do encerramento OTA 2.1.6 — 14/09/2026
+
+- No teste físico 2.1.4 → 2.1.5, a instalação foi seguida pelo aviso do bootloader `Failed to remove temporary directory: _MEI...`.
+- Causa corrigida: o assistente independente era iniciado diretamente de dentro de `_MEIPASS`, mantendo a pasta temporária do executável antigo bloqueada; além disso, `os._exit(0)` interrompia a limpeza normal do Qt/WebEngine.
+- O assistente agora é copiado para `%TEMP%\SaaS_Intelligence_Update` antes da execução, e o encerramento usa `QApplication.quit()` sem saída forçada.
+- A checagem OTA passou a ser agendada após o início do loop principal do Qt, permitindo encerramento normal durante a atualização.
+- Testes específicos do atualizador e suíte completa aprovados: **206 testes**.
+- Build oficial e instalação limpa isolada aprovados. Instalador: `dist/Instalador_SaaS_Assistente_PRO_v2.1.6.exe`, 247.066.764 bytes, SHA-256 `c831f60bd5b28c3569d0b10b26a046b73f321cd0f63ed9e6ecf7e736e66ccc06`.
+- Manifesto conferido contra tamanho e hash reais; o executável instalado também passou no `--build-smoke-test`.
+- Pendente neste registro: publicar a release e anunciar a atualização opcional 2.1.5 → 2.1.6 para repetir o teste físico.
