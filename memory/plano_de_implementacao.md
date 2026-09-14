@@ -149,4 +149,4 @@
 - [x] Criar barreira de smoke test antes da geração do instalador.
 - [x] Gerar executável/instalador 2.1.4 e testar uma instalação limpa isolada.
 - [x] Executar a suíte completa: 199 testes aprovados.
-- [ ] Publicar commit, tag/release 2.1.4, OTA e atualizar o link do site.
+- [x] Publicar commit, tag/release 2.1.4, OTA e atualizar o link do site.

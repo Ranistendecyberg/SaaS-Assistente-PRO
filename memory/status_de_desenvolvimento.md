@@ -704,4 +704,6 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Dependências de build alinhadas ao ambiente Python 3.14: PyQt6/PyQt6-WebEngine 6.11.0 e PyQt6-sip 13.11.1.
 - Validação local concluída: executável empacotado aprovado, instalação limpa isolada aprovada com código 0 e suíte completa com **199 testes aprovados**.
 - Instalador gerado em `dist/Instalador_SaaS_Assistente_PRO_v2.1.4.exe`, SHA-256 `BE3C51ECCE51930C7048F680713603E7558AE4B1A96E3976CCD145607D922811`.
-- Pendente neste registro: publicar Git/release, apontar OTA e site para 2.1.4 e remover o download quebrado da 2.1.3 do fluxo principal.
+- Commit `e601731` enviado à `main`; release pública `v2.1.4` criada como a versão mais recente. O asset remoto confirmou 247.066.480 bytes e digest idêntico ao manifesto local.
+- OTA atualizado como opcional (`current_version=2.1.4`, `minimum_version=0.0.0`, `update_required=false`) com URL e SHA-256 confirmados pelo retorno do Supabase.
+- Site público publicado como versão Sites 5 no mesmo endereço. Resposta HTTPS 200 confirmou o texto 2.1.4 e o novo instalador, sem referência ao instalador 2.1.3.
