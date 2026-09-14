@@ -115,3 +115,9 @@ Após a confirmação do usuário, o Desktop baixa o instalador por HTTPS, valid
 - Banner passa a reservar largura expansível para o nome/metadados; testes reproduziram largura 0 no layout anterior.
 - UI distingue estado local de confirmação do provedor: ocultar QR ou payable=false não prova cancelamento no Mercado Pago. Fatura paga também não implica que a vigência atual acabou de ser renovada.
 - Revisão 2.0.6 contém apenas alterações Desktop; sem migração, nova publicação Edge ou mudança do executável Admin. Testes de concorrência e validação funcional real permanecem separados dos testes unitários/sequenciais.
+# Barreira obrigatória de abertura no build — 14/09/2026
+
+- O instalador só pode ser compilado após o executável empacotado executar `--build-smoke-test` com código 0.
+- O teste importa PyQt6, WebEngine, `PyQt6.sip`, bibliotecas de dados/imagem/rede e todas as telas principais sem abrir janelas, acessar licença ou alterar dados locais.
+- Dependências compiladas que o PyInstaller não detecta de forma confiável devem ser declaradas explicitamente no build; para a versão atual, `PyQt6.sip` é `hidden-import` obrigatório.
+- A cópia de PIX usa `QGuiApplication.clipboard()` para evitar uma segunda dependência de distribuição e permanecer no mesmo toolkit da interface.

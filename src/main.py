@@ -11,6 +11,24 @@ from src.core.backup_manager import BackupManager
 from src.core.paths import get_base_dir
 from src.core.telemetry import record_event
 
+def _run_build_smoke_test():
+    """Importa os módulos essenciais sem abrir janelas nem alterar dados."""
+    import PyQt6.sip
+    from PyQt6 import QtCore, QtGui, QtWidgets, QtWebEngineCore, QtWebEngineWidgets
+    import bs4
+    import pandas
+    import PIL
+    import qrcode
+    import requests
+    from src.ui.screens import (
+        about_screen, billing_dialog, company_account_screen, config_screen,
+        dashboard_comparativo_screen, dashboard_screen, dashboard_ssi_screen,
+        extraction_screen, license_screen, new_installation_screen,
+        password_recovery_dialog, suggestions_screen, terms_dialog,
+        tutorial_screen, user_login_dialog, whatsapp_screen,
+    )
+    return 0
+
 def global_exception_handler(exc_type, exc_value, exc_traceback):
     log_path = os.path.join(get_base_dir(), 'app_data', 'crash_log.txt')
     error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
@@ -28,6 +46,9 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
     sys.exit(1)
 
 def main():
+    if "--build-smoke-test" in sys.argv:
+        return _run_build_smoke_test()
+
     sys.excepthook = global_exception_handler
     record_event("application", "APP_START")
     
@@ -137,4 +158,4 @@ def main():
         sys.exit(0)
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

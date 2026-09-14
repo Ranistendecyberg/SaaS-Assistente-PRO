@@ -141,3 +141,12 @@
 - [ ] Testar remoção, bloqueio e transferência da máquina principal.
 - [ ] Gerar e validar 2.0.0-beta em dois computadores.
 - [ ] Publicar 2.0.0 somente após aceite formal dos testes.
+# Hotfix 2.1.4 — falha de abertura da distribuição
+
+- [x] Reproduzir e identificar a ausência de `PyQt6.sip` no executável 2.1.3.
+- [x] Tornar `PyQt6.sip` obrigatório no empacotamento.
+- [x] Remover dependência não empacotada do botão Copiar PIX.
+- [x] Criar barreira de smoke test antes da geração do instalador.
+- [x] Gerar executável/instalador 2.1.4 e testar uma instalação limpa isolada.
+- [x] Executar a suíte completa: 199 testes aprovados.
+- [ ] Publicar commit, tag/release 2.1.4, OTA e atualizar o link do site.

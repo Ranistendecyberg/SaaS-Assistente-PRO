@@ -6,6 +6,14 @@ from update_version import update_release_version
 
 
 class ReleaseVersioningTests(unittest.TestCase):
+    def test_release_build_requires_pyqt_sip_and_executable_smoke_test(self):
+        build_script = (Path(__file__).parents[2] / "build_release.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"--hidden-import", "PyQt6.sip"', build_script)
+        self.assertIn('desktop_exe, "--build-smoke-test"', build_script)
+        self.assertIn("if smoke.returncode != 0", build_script)
+
     def test_updates_desktop_and_installer_as_one_release(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

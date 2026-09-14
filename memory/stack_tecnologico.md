@@ -7,6 +7,7 @@
 - **Linguagem:** Python 3.11+
 - **Interface gráfica:** PyQt6
 - **Navegador incorporado:** PyQt6-WebEngine / QWebEngineView (Chromium)
+- **Runtime de distribuição 2.1.4:** Python 3.14.5, PyQt6 6.11.0, PyQt6-WebEngine 6.11.0 e PyQt6-sip 13.11.1
 - **Automação do myHonda e WhatsApp:** JavaScript injetado com `runJavaScript`
 - **Persistência local:** SQLite e arquivos JSON
 - **Dashboards:** HTML/JavaScript e ECharts incorporados à interface

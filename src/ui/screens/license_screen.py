@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QLineEdit, QStackedWidget, QWidget, QMessageBox, QFrame)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
-from PyQt6.QtGui import QPixmap, QImage
+from PyQt6.QtGui import QGuiApplication, QPixmap, QImage
 from src.core.license_manager import LicenseManager
 import qrcode
 from PIL import Image, ImageQt
@@ -330,9 +330,8 @@ class LicenseScreen(QDialog):
         self.execute_async(task, on_done)
 
     def copiar_pix(self):
-        import pyperclip
         if self.str_copia_cola:
-            pyperclip.copy(self.str_copia_cola)
+            QGuiApplication.clipboard().setText(self.str_copia_cola)
             QMessageBox.information(self, "Copiado", "Código Copia e Cola salvo na área de transferência!")
 
     def checar_pagamento_pix(self):

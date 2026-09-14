@@ -696,3 +696,12 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - O Supabase v2 foi configurado com `current_version=2.0.0`, `minimum_version=0.0.0` e `update_required=false`, mantendo a primeira distribuição opcional. A consulta de confirmação retornou o link público e o SHA-256 corretos.
 - O cliente real do Desktop, simulando `2.0.0-beta.1`, recebeu os cinco parâmetros corretos do `desktop-api`.
 - Teste OTA remoto concluído em 09/09/2026: o `DownloadWorker` baixou o instalador público, validou PE/SHA-256 sem erros; o assistente instalou, removeu o arquivo temporário e reabriu automaticamente `%LOCALAPPDATA%\\Programs\\SaaS Assistente PRO\\SaaS Assistente PRO.exe`.
+# Hotfix de distribuição 2.1.4 — 14/09/2026
+
+- A versão pública 2.1.3 falhava antes de abrir a interface com `ModuleNotFoundError: PyQt6.sip`; o arquivo existia no ambiente de build, mas não havia sido coletado pelo PyInstaller.
+- O build 2.1.4 declara `PyQt6.sip` como importação obrigatória e executa um teste do executável empacotado antes de permitir que o Inno Setup gere o instalador.
+- O botão de cópia do PIX deixou de depender de `pyperclip`, ausente no ambiente de distribuição, e passou a usar a área de transferência nativa do Qt.
+- Dependências de build alinhadas ao ambiente Python 3.14: PyQt6/PyQt6-WebEngine 6.11.0 e PyQt6-sip 13.11.1.
+- Validação local concluída: executável empacotado aprovado, instalação limpa isolada aprovada com código 0 e suíte completa com **199 testes aprovados**.
+- Instalador gerado em `dist/Instalador_SaaS_Assistente_PRO_v2.1.4.exe`, SHA-256 `BE3C51ECCE51930C7048F680713603E7558AE4B1A96E3976CCD145607D922811`.
+- Pendente neste registro: publicar Git/release, apontar OTA e site para 2.1.4 e remover o download quebrado da 2.1.3 do fluxo principal.

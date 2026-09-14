@@ -1,5 +1,8 @@
 # Limitações e Restrições Técnicas — Desktop
 
+- A distribuição pública 2.1.3 não deve mais ser indicada para download: ela foi empacotada sem `PyQt6.sip` e falha antes da interface. Como não inicia, essa versão não consegue se autocorrigir por OTA; usuários que a baixaram precisam instalar manualmente a 2.1.4 ou posterior.
+- A partir da 2.1.4, o pipeline impede a geração do instalador quando o executável empacotado falha no teste de importações essenciais. Esse teste reduz falhas de dependência, mas não substitui homologação visual, login real, myHonda, WhatsApp e pagamento em ambiente controlado.
+
 - Auditoria 11/09/2026: caches e manutenção em lote foram corrigidos, mas JSON/pandas continuam limitando históricos grandes; considerar SQLite acima de 25 MB ou 50 mil registros.
 - Os testes visuais foram desbloqueados com Pillow compatível e a suíte completa de 198 testes passou em Python 3.14.
 - Migrações 024–029 e `account-api`/`cron-worker` foram publicados no Supabase remoto após validação local/PGlite e em clone PostgreSQL 17.11.

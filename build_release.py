@@ -70,6 +70,7 @@ def main():
         "--add-data", "logo.ico;.",
         "--add-data", f"{os.path.join('src', 'assets')};{os.path.join('src', 'assets')}",
         "--add-binary", f"{helper_exe};.",
+        "--hidden-import", "PyQt6.sip",
         "--name", f"SaaS Assistente PRO v{versao}",
         "--paths", cwd,
         os.path.join("src", "main.py")
@@ -100,6 +101,24 @@ def main():
         os.path.join("src", "main.py")
     ]
     subprocess.run(pyarmor_cmd, check=True)
+
+    # O PyQt6 6.11 no Python 3.14 expõe sip como uma extensão compilada.
+    # Sem o hidden import acima, o PyInstaller pode concluir o build mesmo
+    # registrando PyQt6.sip como ausente e o executável falha antes da UI.
+    desktop_exe = os.path.join(cwd, "dist", f"SaaS Assistente PRO v{versao}.exe")
+    if not os.path.isfile(desktop_exe):
+        raise FileNotFoundError(f"Executável principal não encontrado: {desktop_exe}")
+    print("\n[4.1/5] Validando abertura e dependências do executável...")
+    smoke = subprocess.run(
+        [desktop_exe, "--build-smoke-test"],
+        timeout=120,
+        check=False,
+    )
+    if smoke.returncode != 0:
+        raise RuntimeError(
+            f"O executável falhou no teste de abertura (código {smoke.returncode}). "
+            "O instalador não será gerado."
+        )
 
     # 5. Inno Setup
     print("\n[5/5] Compilando Instalador Oficial Inno Setup...")
