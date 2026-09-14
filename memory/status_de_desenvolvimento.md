@@ -707,3 +707,4 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Commit `e601731` enviado à `main`; release pública `v2.1.4` criada como a versão mais recente. O asset remoto confirmou 247.066.480 bytes e digest idêntico ao manifesto local.
 - OTA atualizado como opcional (`current_version=2.1.4`, `minimum_version=0.0.0`, `update_required=false`) com URL e SHA-256 confirmados pelo retorno do Supabase.
 - Site público publicado como versão Sites 5 no mesmo endereço. Resposta HTTPS 200 confirmou o texto 2.1.4 e o novo instalador, sem referência ao instalador 2.1.3.
+- E-mail público de suporte atualizado em 14/09/2026 para `berg.suportetr@gmail.com` em todos os links de contato e condições. Sites versão 6 publicada; conferência HTTPS confirmou o novo endereço e ausência do e-mail anterior.
