@@ -744,3 +744,10 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Build oficial e instalação limpa isolada aprovados. Instalador: `dist/Instalador_SaaS_Assistente_PRO_v2.1.6.exe`, 247.066.764 bytes, SHA-256 `c831f60bd5b28c3569d0b10b26a046b73f321cd0f63ed9e6ecf7e736e66ccc06`.
 - Manifesto conferido contra tamanho e hash reais; o executável instalado também passou no `--build-smoke-test`.
 - Pendente neste registro: publicar a release e anunciar a atualização opcional 2.1.5 → 2.1.6 para repetir o teste físico.
+
+## Limpeza dos vínculos de teste — 14/09/2026
+
+- Removida do Supabase a empresa de teste **Grupo Ipe Motos**, incluindo sua unidade, vínculo empresarial, assinatura/cobrança associada e os dois computadores cadastrados.
+- A operação foi protegida por validações transacionais: somente prosseguiu após confirmar exatamente uma empresa, dois computadores e um usuário vinculado. A conferência final retornou zero empresa, zero CNPJ, zero computadores e zero vínculos restantes.
+- A identidade do usuário em `auth.users` foi preservada, permitindo que o mesmo e-mail seja reutilizado futuramente em um novo cadastro.
+- Nesta máquina, o Desktop em execução foi encerrado e somente `supabase_installation.dat` e `supabase_user.dat` foram removidos. Históricos, configurações e dados operacionais locais permaneceram preservados.
