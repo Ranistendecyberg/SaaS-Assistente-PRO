@@ -729,4 +729,7 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Instalador gerado em `dist/Instalador_SaaS_Assistente_PRO_v2.1.5.exe`, com 247.066.662 bytes e SHA-256 `bf1b4bc16172609224f6ace61bf0297db8aa3a6a04c9155de36c0db27fae8e9e`.
 - Manifesto `dist/release_v2.1.5.json` conferido contra tamanho e hash reais.
 - Instalação silenciosa em diretório isolado e teste de abertura do executável instalado aprovados.
-- Pendente neste registro: publicar código/release e anunciar a versão via OTA opcional para realizar o teste físico 2.1.4 → 2.1.5.
+- Commit `583b9f3` enviado à `main`; release pública `v2.1.5` criada como **Latest** e ligada ao mesmo commit.
+- Asset remoto confirmado com 236 MB e digest SHA-256 `bf1b4bc16172609224f6ace61bf0297db8aa3a6a04c9155de36c0db27fae8e9e`, idêntico ao manifesto local.
+- Supabase atualizado e confirmado com `current_version=2.1.5`, `minimum_version=0.0.0`, `update_required=false`, URL pública do instalador e o mesmo SHA-256.
+- A consulta de simulação pelo cliente local não pôde concluir o teste autenticado porque a sessão de instalação desta máquina retornou `UNAUTHORIZED`. O teste físico 2.1.4 → 2.1.5 permanece pronto para uma instalação com licença ativa.
