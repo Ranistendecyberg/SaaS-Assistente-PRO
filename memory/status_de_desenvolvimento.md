@@ -763,4 +763,6 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - O diagnóstico e as abas fantasmas agora ficam completamente ocultos fora do modo desenvolvedor. O atalho `Ctrl+Shift+D` exige autorização por equipamento válida por 24 horas, senha derivada com PBKDF2, comparação em tempo constante e bloqueio de 15 minutos após cinco erros.
 - Suíte completa aprovada com **212 testes**. A instalação silenciosa isolada e o executável instalado passaram no `--build-smoke-test`.
 - Instalador definitivo: `dist/Instalador_SaaS_Assistente_PRO_v2.1.7.exe`, 247.075.800 bytes, SHA-256 `1765a6e5f92b8a6e68162a525484caaf40b11b914d903a0f83d387476987b58d`.
-- A versão 2.1.7 ainda não foi publicada no GitHub nem configurada como atualização OTA; deve ser testada primeiro com um único número próprio ou autorizado.
+- Commit `bbbf836` enviado à `main`; release pública `v2.1.7` criada como **Latest**. O asset remoto confirmou o mesmo SHA-256 do instalador local.
+- Supabase atualizado e confirmado com `current_version=2.1.7`, `minimum_version=0.0.0`, `update_required=false`, URL pública do instalador e SHA-256 correto. A atualização foi disponibilizada como opcional.
+- Site público atualizado para a versão Sites 8. A conferência da página publicada confirmou os três botões apontando para o instalador 2.1.7 e os textos de versão atualizados.
