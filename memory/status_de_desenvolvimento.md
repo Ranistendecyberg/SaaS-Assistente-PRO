@@ -752,3 +752,15 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - A operação foi protegida por validações transacionais: somente prosseguiu após confirmar exatamente uma empresa, dois computadores e um usuário vinculado. A conferência final retornou zero empresa, zero CNPJ, zero computadores e zero vínculos restantes.
 - A identidade do usuário em `auth.users` foi preservada, permitindo que o mesmo e-mail seja reutilizado futuramente em um novo cadastro.
 - Nesta máquina, o Desktop em execução foi encerrado e somente `supabase_installation.dat` e `supabase_user.dat` foram removidos. Históricos, configurações e dados operacionais locais permaneceram preservados.
+
+## Diagnóstico do envio WhatsApp 2.1.7 — 15/09/2026
+
+- Identificado falso positivo no disparo: o Desktop considerava a mensagem enviada imediatamente após disparar eventos de mouse por JavaScript, sem confirmar se o WhatsApp havia aceitado o clique. Em lote, isso podia marcar a pesquisa como enviada e confirmar o consumo mesmo com a mensagem ainda no rascunho.
+- O fluxo agora separa `SEND_CLICK_ATTEMPTED` de `SEND_CONFIRMED`. A fila somente recebe sucesso depois que uma segunda verificação constata que o campo de composição foi limpo; rascunho persistente termina como falha e libera a reserva de envio.
+- A procura do botão passou a registrar o seletor encontrado e motivos sanitizados como campo ausente, texto divergente, botão ausente ou rascunho persistente. Número e conteúdo da mensagem não são enviados pela telemetria.
+- A tela do WhatsApp ganhou um teste controlado com número e mensagem livres. O botão só é habilitado quando a licença está com diagnóstico detalhado por 24 horas ativo; esse modo não emite sinais para a fila, não marca pesquisa e não consome franquia.
+- A igualdade literal da URL deixou de bloquear o envio, e o texto passou a ser comparado com normalização de Unicode e espaços.
+- O diagnóstico e as abas fantasmas agora ficam completamente ocultos fora do modo desenvolvedor. O atalho `Ctrl+Shift+D` exige autorização por equipamento válida por 24 horas, senha derivada com PBKDF2, comparação em tempo constante e bloqueio de 15 minutos após cinco erros.
+- Suíte completa aprovada com **212 testes**. A instalação silenciosa isolada e o executável instalado passaram no `--build-smoke-test`.
+- Instalador definitivo: `dist/Instalador_SaaS_Assistente_PRO_v2.1.7.exe`, 247.075.800 bytes, SHA-256 `1765a6e5f92b8a6e68162a525484caaf40b11b914d903a0f83d387476987b58d`.
+- A versão 2.1.7 ainda não foi publicada no GitHub nem configurada como atualização OTA; deve ser testada primeiro com um único número próprio ou autorizado.

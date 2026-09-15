@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QMessageBox
 from src.tests.test_license_supabase import FakeBackend, manager_with
 from src.ui.screens.whatsapp_screen import WhatsAppScreen
 from src.ui.screens.extraction_screen import ExtractionScreen
+from src.core.developer_access import DeveloperAccessGuard
 
 
 class FakeListItem:
@@ -103,6 +104,111 @@ class MessagingTests(unittest.TestCase):
         screen.callback_click.assert_not_called()
         WhatsAppScreen._finish_click(screen, 2, 'SENT')
         screen.callback_click.assert_called_once_with('SENT')
+
+    def test_phone_normalization_for_diagnostic_test(self):
+        self.assertEqual(
+            WhatsAppScreen._normalize_test_phone('(85) 99999-9999'),
+            '5585999999999',
+        )
+        self.assertEqual(
+            WhatsAppScreen._normalize_test_phone('+55 85 99999-9999'),
+            '5585999999999',
+        )
+        self.assertEqual(WhatsAppScreen._normalize_test_phone('123'), '')
+
+    @patch('src.ui.screens.whatsapp_screen.record_event')
+    def test_click_attempt_does_not_confirm_batch_until_composer_clears(self, _record):
+        screen = SimpleNamespace(
+            _last_probe_status='',
+            _awaiting_confirmation=False,
+            modo_envio='LOTE',
+            _telemetry_contact_ref='anon',
+            tentativas_click=2,
+            sig_message_sent=MagicMock(),
+            click_timer=MagicMock(),
+        )
+        WhatsAppScreen.callback_click(
+            screen, {'status': 'CLICKED', 'selector': 'DATA_ICON_SEND'}
+        )
+        self.assertTrue(screen._awaiting_confirmation)
+        screen.sig_message_sent.emit.assert_not_called()
+
+        WhatsAppScreen.callback_click(
+            screen,
+            {'status': 'CONFIRMED', 'composer_cleared': True, 'outgoing_match': True},
+        )
+        screen.sig_message_sent.emit.assert_called_once_with(True)
+        screen.click_timer.stop.assert_called_once()
+
+    @patch('src.ui.screens.whatsapp_screen.record_event')
+    def test_diagnostic_confirmation_never_emits_batch_success(self, _record):
+        screen = SimpleNamespace(
+            _last_probe_status='',
+            _awaiting_confirmation=True,
+            modo_envio='DIAGNOSTICO',
+            _telemetry_contact_ref='anon',
+            tentativas_click=3,
+            sig_message_sent=MagicMock(),
+            click_timer=MagicMock(),
+            diagnostic_status=MagicMock(),
+            btn_diagnostic_send=MagicMock(),
+        )
+        WhatsAppScreen.callback_click(
+            screen,
+            {'status': 'CONFIRMED', 'composer_cleared': True, 'outgoing_match': True},
+        )
+        screen.sig_message_sent.emit.assert_not_called()
+        screen.btn_diagnostic_send.setEnabled.assert_called_once_with(True)
+
+    @patch('src.core.developer_access.record_event')
+    def test_developer_password_uses_hardened_verifier(self, _record):
+        original = (
+            DeveloperAccessGuard._failures,
+            DeveloperAccessGuard._blocked_until,
+        )
+        try:
+            DeveloperAccessGuard._failures = 0
+            DeveloperAccessGuard._blocked_until = 0
+            self.assertEqual(
+                DeveloperAccessGuard.verify_password('@1234'),
+                (True, 'OK'),
+            )
+            self.assertEqual(
+                DeveloperAccessGuard.verify_password('incorreta'),
+                (False, 'INVALID:4'),
+            )
+        finally:
+            DeveloperAccessGuard._failures, DeveloperAccessGuard._blocked_until = original
+
+    @patch('src.ui.screens.whatsapp_screen.QInputDialog.getText', return_value=('@1234', True))
+    @patch.object(DeveloperAccessGuard, 'verify_password', return_value=(True, 'OK'))
+    @patch.object(DeveloperAccessGuard, 'authorization_status', return_value=(True, ''))
+    def test_diagnostic_panel_requires_temporary_authorization_and_password(
+        self, _authorization, _password, _prompt,
+    ):
+        screen = SimpleNamespace(
+            diagnostic_panel=MagicMock(),
+            btn_diagnostic_send=MagicMock(),
+            diagnostic_status=MagicMock(),
+        )
+        screen.diagnostic_panel.isVisible.return_value = False
+        WhatsAppScreen.toggle_diagnostic_panel(screen)
+        screen.diagnostic_panel.setVisible.assert_called_once_with(True)
+        screen.btn_diagnostic_send.setEnabled.assert_called_once_with(True)
+
+    @patch.object(DeveloperAccessGuard, 'authorization_status', return_value=(False, 'DIAGNOSTIC_AUTHORIZATION_REQUIRED'))
+    @patch('src.ui.screens.whatsapp_screen.QMessageBox.warning')
+    def test_diagnostic_panel_stays_hidden_without_server_authorization(
+        self, warning, _authorization,
+    ):
+        screen = SimpleNamespace(
+            diagnostic_panel=MagicMock(),
+            btn_diagnostic_send=MagicMock(),
+        )
+        screen.diagnostic_panel.isVisible.return_value = False
+        WhatsAppScreen.toggle_diagnostic_panel(screen)
+        screen.diagnostic_panel.setVisible.assert_not_called()
+        warning.assert_called_once()
 
     def test_custom_daily_limit_in_error_message(self):
         screen = manager_with(FakeBackend())

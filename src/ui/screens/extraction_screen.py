@@ -16,8 +16,7 @@ from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 # import pandas as pd deferred
 from src.core.database import DatabaseManager
 from src.core.telemetry import TelemetryClient, anonymous_id, record_event
-
-_DEV_MODE_HASH = "2a48d3dea06bb97c2ceeec84aff334a2769d912c308a9f9680d38053d078de62" # '@1234'
+from src.core.developer_access import DeveloperAccessGuard
 
 
 def _normalizar_texto_busca(valor):
@@ -640,27 +639,41 @@ class ExtractionScreen(QWidget):
         self.dev_shortcut.activated.connect(self.abrir_modo_desenvolvedor)
 
     def abrir_modo_desenvolvedor(self):
+        if self.stack_direita.currentIndex() == 2:
+            novo_idx = 1 if getattr(self, 'iniciou_carregamento', False) else 0
+            self.stack_direita.setCurrentIndex(novo_idx)
+            titulo = "  ✉️ Editor de Mensagem e Disparo WhatsApp" if novo_idx == 1 else "  🔐 Visão do myHonda (Faça o Login para Iniciar automação)"
+            self.lbl_nav_titulo.setText(titulo)
+            QMessageBox.information(self, "Modo Desenvolvedor", "Modo desenvolvedor ocultado.")
+            return
+
+        autorizado, motivo = DeveloperAccessGuard.authorization_status(force=True)
+        if not autorizado:
+            texto = (
+                "Não foi possível confirmar a autorização no servidor. Verifique a internet e tente novamente."
+                if motivo == "DIAGNOSTIC_AUTHORIZATION_UNAVAILABLE" else
+                "Autorize o diagnóstico por 24 horas neste computador pelo Gerador Admin antes de continuar."
+            )
+            QMessageBox.warning(self, "Acesso protegido", texto)
+            return
+        bloqueio = DeveloperAccessGuard.remaining_lock_seconds()
+        if bloqueio:
+            QMessageBox.warning(self, "Acesso temporariamente bloqueado", f"Aguarde {bloqueio // 60 + 1} minuto(s) para tentar novamente.")
+            return
         senha, ok = QInputDialog.getText(
             self, "Modo Desenvolvedor / Master", 
             "Digite a senha de administrador:", 
             QLineEdit.EchoMode.Password
         )
         if ok:
-            import hashlib
-            if hashlib.sha256(senha.encode("utf-8")).hexdigest() == _DEV_MODE_HASH:
-                idx_atual = self.stack_direita.currentIndex()
-                if idx_atual == 2:
-                    novo_idx = 1 if getattr(self, 'iniciou_carregamento', False) else 0
-                    self.stack_direita.setCurrentIndex(novo_idx)
-                    titulo = "  ✉️ Editor de Mensagem e Disparo WhatsApp" if novo_idx == 1 else "  🔐 Visão do myHonda (Faça o Login para Iniciar automação)"
-                    self.lbl_nav_titulo.setText(titulo)
-                    QMessageBox.information(self, "Modo Desenvolvedor", "Visualização alternada para: Modo Padrão / Fantasma.")
-                else:
-                    self.stack_direita.setCurrentIndex(2)
-                    self.lbl_nav_titulo.setText("  🔧 [MODO DEV ATIVO] Modo: VISÍVEL (Abas de Robôs e Relatórios)")
-                    QMessageBox.information(self, "Modo Desenvolvedor", "Visualização alternada para:\nModo Desenvolvedor (Abas dos Robôs e Relatórios).")
+            acesso, resultado = DeveloperAccessGuard.verify_password(senha)
+            if acesso:
+                self.stack_direita.setCurrentIndex(2)
+                self.lbl_nav_titulo.setText("  🔧 [MODO DEV ATIVO] Modo: VISÍVEL (Abas de Robôs e Relatórios)")
+                QMessageBox.information(self, "Modo Desenvolvedor", "Modo desenvolvedor autorizado temporariamente para este computador.")
             else:
-                QMessageBox.warning(self, "Acesso Negado", "Senha incorreta!")
+                mensagem = "Acesso bloqueado por 15 minutos após tentativas incorretas." if resultado == "LOCKED" else "Senha incorreta. As tentativas são limitadas."
+                QMessageBox.warning(self, "Acesso Negado", mensagem)
 
     def iniciar_sincronizacao_automatica(self):
         # 1. Transição para Modo Fantasma: Oculta navegadores e exibe Editor de Mensagens
