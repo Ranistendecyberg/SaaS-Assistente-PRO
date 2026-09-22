@@ -6,9 +6,11 @@ from unittest import mock
 from pathlib import Path
 
 from src.core.updater import (
+    DownloadWorker,
     Updater,
     build_silent_installer_command,
     build_update_assistant_command,
+    create_update_ssl_context,
     resolve_installed_app_path,
     stage_update_assistant,
     validate_installer_file,
@@ -17,6 +19,49 @@ from update_completion_helper import installer_command, launch_updated_app
 
 
 class UpdaterSecurityTests(unittest.TestCase):
+    def test_update_ssl_context_combines_certifi_and_windows_trust(self):
+        context = mock.Mock()
+        windows_certificate = b"windows-corporate-root"
+        with (
+            mock.patch("src.core.updater.certifi.where", return_value="certifi-ca.pem"),
+            mock.patch("src.core.updater.ssl.create_default_context", return_value=context) as create,
+            mock.patch(
+                "src.core.updater.ssl.enum_certificates",
+                return_value=[(windows_certificate, "x509_asn", True)],
+                create=True,
+            ) as enum_certificates,
+            mock.patch(
+                "src.core.updater.ssl.DER_cert_to_PEM_cert",
+                return_value="-----BEGIN CERTIFICATE-----\ntrusted\n-----END CERTIFICATE-----\n",
+            ),
+        ):
+            result = create_update_ssl_context()
+
+        self.assertIs(result, context)
+        create.assert_called_once_with(cafile="certifi-ca.pem")
+        self.assertEqual(enum_certificates.call_count, 2)
+        context.load_verify_locations.assert_called_once()
+        self.assertIn("trusted", context.load_verify_locations.call_args.kwargs["cadata"])
+        self.assertEqual(context.minimum_version, __import__("ssl").TLSVersion.TLSv1_2)
+
+    def test_download_uses_explicit_verified_ssl_context(self):
+        worker = DownloadWorker("https://example.com/update.exe", "2.1.8", "0" * 64)
+        verified_context = object()
+        with (
+            mock.patch(
+                "src.core.updater.create_update_ssl_context",
+                return_value=verified_context,
+            ),
+            mock.patch(
+                "src.core.updater.urllib.request.urlopen",
+                side_effect=RuntimeError("interromper antes da gravação"),
+            ) as urlopen,
+        ):
+            worker.run()
+
+        self.assertIs(urlopen.call_args.kwargs["context"], verified_context)
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 30)
+
     def test_release_build_filters_external_native_runtime(self):
         build_script = Path("build_release.py").read_text(encoding="utf-8")
         self.assertIn("codex-runtimes", build_script)

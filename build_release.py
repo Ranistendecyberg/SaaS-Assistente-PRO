@@ -6,6 +6,36 @@ import hashlib
 import json
 import re
 
+
+def tkinter_runtime_available():
+    """Confirma que o Tcl/Tk necessário ao splash está realmente utilizável."""
+    try:
+        import tkinter
+
+        interpreter = tkinter.Tcl()
+        interpreter.eval("info patchlevel")
+        return True
+    except Exception:
+        return False
+
+
+def python_runtime_openssl_binaries():
+    """Retorna as DLLs OpenSSL compatíveis com o _ssl deste Python."""
+    dll_dir = os.path.join(sys.base_prefix, "DLLs")
+    binaries = []
+    for prefix in ("libssl-", "libcrypto-"):
+        matches = sorted(
+            os.path.join(dll_dir, name)
+            for name in os.listdir(dll_dir)
+            if name.lower().startswith(prefix) and name.lower().endswith(".dll")
+        ) if os.path.isdir(dll_dir) else []
+        if not matches:
+            raise FileNotFoundError(
+                f"DLL {prefix}*.dll do runtime Python não encontrada em {dll_dir}"
+            )
+        binaries.append(matches[0])
+    return binaries
+
 def main():
     versao = (sys.argv[1] if len(sys.argv) > 1 else "").strip().lower().lstrip("v")
     if not re.fullmatch(r"\d+\.\d+\.\d+", versao):
@@ -63,7 +93,6 @@ def main():
     print(f"\n[3/4] Gerando spec para SaaS Assistente PRO v{versao}...")
     makespec_cmd = [
         sys.executable, "-m", "PyInstaller.utils.cliutils.makespec",
-        "--splash", os.path.join("src", "assets", "icon.png"),
         "--onefile",
         "--windowed",
         "--icon=logo.ico",
@@ -75,32 +104,46 @@ def main():
         "--paths", cwd,
         os.path.join("src", "main.py")
     ]
+    # Alguns ambientes de build também expõem DLLs OpenSSL do Poppler. O
+    # PyInstaller pode escolhê-las durante a análise e o filtro abaixo as
+    # remove por segurança. Inclua explicitamente as DLLs que pertencem ao
+    # mesmo runtime Python do módulo _ssl.
+    for openssl_dll in python_runtime_openssl_binaries():
+        makespec_cmd[3:3] = ["--add-binary", f"{openssl_dll};."]
+    if tkinter_runtime_available():
+        makespec_cmd[3:3] = ["--splash", os.path.join("src", "assets", "icon.png")]
+    else:
+        print("Aviso: Tcl/Tk indisponível; build seguirá sem a tela de splash opcional.")
     subprocess.run(makespec_cmd, check=True)
 
-    # Defesa adicional: mesmo que o PATH externo volte a ser contaminado,
-    # nunca empacotar bibliotecas nativas do runtime auxiliar do ambiente.
     generated_spec = os.path.join(cwd, f"SaaS Assistente PRO v{versao}.spec")
+    # O ambiente de documentos registra DLLs nativas auxiliares (Poppler,
+    # libheif etc.) fora do PATH. Elas não pertencem ao Desktop e uma ucrtbase
+    # incompatível impede o QtCore de iniciar. Preserve, porém, o runtime Python
+    # do mesmo cache: remover todo `.cache\codex-runtimes` elimina python312.dll.
     with open(generated_spec, "r", encoding="utf-8") as spec_file:
         spec_text = spec_file.read()
     filter_code = (
-        "\n# Remove DLLs externas do runtime de documentos (Poppler/libheif).\n"
+        "\n# Exclui apenas dependências nativas auxiliares; preserva o runtime Python.\n"
         "a.binaries = [entry for entry in a.binaries "
-        "if '\\\\.cache\\\\codex-runtimes\\\\' not in str(entry[1]).lower()]\n\n"
+        "if '\\\\dependencies\\\\native\\\\' not in str(entry[1]).lower()]\n\n"
     )
     if "pyz = PYZ(a.pure)" not in spec_text:
         raise RuntimeError("Não foi possível aplicar o filtro seguro ao arquivo spec.")
-    spec_text = spec_text.replace("pyz = PYZ(a.pure)", filter_code + "pyz = PYZ(a.pure)", 1)
+    spec_text = spec_text.replace(
+        "pyz = PYZ(a.pure)", filter_code + "pyz = PYZ(a.pure)", 1
+    )
     with open(generated_spec, "w", encoding="utf-8") as spec_file:
         spec_file.write(spec_text)
 
-    # 3. PyArmor gen --pack
-    print(f"\n[4/4] Ofuscando código e empacotando com PyArmor...")
-    pyarmor_cmd = [
-        sys.executable, "-m", "pyarmor.cli", "gen",
-        "--pack", f"SaaS Assistente PRO v{versao}.spec",
-        os.path.join("src", "main.py")
-    ]
-    subprocess.run(pyarmor_cmd, check=True)
+    # 4. Empacotamento oficial. A proteção do produto está no backend, no
+    # DPAPI e nos controles de autenticação; o build comercial não depende de
+    # uma licença trial/non-profits de ofuscação para iniciar corretamente.
+    print(f"\n[4/4] Empacotando executável oficial com PyInstaller...")
+    subprocess.run([
+        sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
+        generated_spec,
+    ], check=True)
 
     # O PyQt6 6.11 no Python 3.14 expõe sip como uma extensão compilada.
     # Sem o hidden import acima, o PyInstaller pode concluir o build mesmo
@@ -109,16 +152,29 @@ def main():
     if not os.path.isfile(desktop_exe):
         raise FileNotFoundError(f"Executável principal não encontrado: {desktop_exe}")
     print("\n[4.1/5] Validando abertura e dependências do executável...")
+    smoke_log = os.path.join(cwd, "build_smoke_test.log")
+    if os.path.exists(smoke_log):
+        os.remove(smoke_log)
+    smoke_environment = os.environ.copy()
+    smoke_environment["SAAS_BUILD_SMOKE_TEST"] = "1"
+    smoke_environment["SAAS_BUILD_SMOKE_LOG"] = smoke_log
     smoke = subprocess.run(
         [desktop_exe, "--build-smoke-test"],
         timeout=120,
         check=False,
+        env=smoke_environment,
     )
     if smoke.returncode != 0:
+        details = ""
+        if os.path.exists(smoke_log):
+            with open(smoke_log, "r", encoding="utf-8", errors="replace") as log_file:
+                details = "\n" + log_file.read().strip()
         raise RuntimeError(
             f"O executável falhou no teste de abertura (código {smoke.returncode}). "
-            "O instalador não será gerado."
+            f"O instalador não será gerado.{details}"
         )
+    if os.path.exists(smoke_log):
+        os.remove(smoke_log)
 
     # 5. Inno Setup
     print("\n[5/5] Compilando Instalador Oficial Inno Setup...")

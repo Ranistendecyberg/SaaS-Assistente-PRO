@@ -2,7 +2,7 @@
 ; Identificação do App
 AppName=SaaS Assistente PRO
 AppId=SaaS Assistente PRO
-AppVersion=2.1.7
+AppVersion=2.1.8
 AppPublisher=Gestao de Qualidade
 AppCopyright=Copyright (C) 2026
 
@@ -23,14 +23,14 @@ UninstallDisplayIcon={app}\SaaS Assistente PRO.exe
 Compression=lzma2/ultra
 SolidCompression=yes
 OutputDir=dist
-OutputBaseFilename=Instalador_SaaS_Assistente_PRO_v2.1.7
+OutputBaseFilename=Instalador_SaaS_Assistente_PRO_v2.1.8
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar um atalho na Área de Trabalho"; GroupDescription: "Atalhos adicionais:"; Flags: checkedonce
 
 [Files]
 ; Copia o executável principal e o ícone para a pasta de instalação
-Source: "dist\SaaS Assistente PRO v2.1.7.exe"; DestDir: "{app}"; DestName: "SaaS Assistente PRO.exe"; Flags: ignoreversion
+Source: "dist\SaaS Assistente PRO v2.1.8.exe"; DestDir: "{app}"; DestName: "SaaS Assistente PRO.exe"; Flags: ignoreversion
 Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

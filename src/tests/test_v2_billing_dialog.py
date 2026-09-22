@@ -6,6 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication
 
+from src.core.supabase_desktop import DesktopBackendError
 from src.ui.screens.billing_dialog import BillingDialog
 
 
@@ -14,11 +15,64 @@ class BillingDialogTests(unittest.TestCase):
         dialog = self.create_dialog()
         dialog._status_attempt_id = "attempt-1"
         dialog.auth.refresh_company_payment.return_value = {"result": {"invoice_status": "paid"}}
-        dialog.auth.billing_summary.return_value = {"invoices": []}
-        with patch.object(dialog, "_run", side_effect=lambda operation, done: done(operation())):
+        dialog.auth.billing_summary.return_value = {
+            "payment_environment": "production", "invoices": [],
+        }
+        with patch.object(dialog, "_run", side_effect=lambda operation, done: done(operation())), \
+                patch("src.ui.screens.billing_dialog.QMessageBox.information") as information:
             dialog._check_provider_status()
         dialog.auth.refresh_company_payment.assert_called_once_with("company-1", "attempt-1")
         self.assertIn("Pagamento confirmado", dialog.result.text())
+        self.assertIn("Pagamento confirmado", information.call_args.args[2])
+
+    def test_provider_check_reports_pending_result(self):
+        dialog = self.create_dialog()
+        dialog._status_attempt_id = "attempt-1"
+        dialog.auth.refresh_company_payment.return_value = {
+            "result": {"invoice_status": "open", "attempt_status": "pending"},
+        }
+        dialog.auth.billing_summary.return_value = {
+            "payment_environment": "test",
+            "invoices": [{
+                "status": "open", "total_amount": "50.00",
+                "billing_payment_attempts": [{
+                    "id": "attempt-1", "payment_method": "pix",
+                    "provider_environment": "test", "status": "pending",
+                    "payable": True, "pix_copy_paste": "000201TESTE",
+                }],
+            }],
+        }
+        with patch.object(dialog, "_run", side_effect=lambda operation, done: done(operation())), \
+                patch("src.ui.screens.billing_dialog.QMessageBox.information") as information:
+            dialog._check_provider_status()
+        self.assertIn("ainda aguarda confirmação", dialog.result.text())
+        self.assertIn("Não gere outro PIX", dialog.result.text())
+        self.assertIn("ainda aguarda confirmação", information.call_args.args[2])
+
+    def test_provider_check_names_pending_boleto_correctly(self):
+        dialog = self.create_dialog()
+        dialog._status_attempt_id = "attempt-1"
+        dialog.auth.refresh_company_payment.return_value = {
+            "result": {"invoice_status": "open", "attempt_status": "pending"},
+        }
+        dialog.auth.billing_summary.return_value = {
+            "payment_environment": "test",
+            "invoices": [{
+                "status": "open", "total_amount": "50.00",
+                "billing_payment_attempts": [{
+                    "id": "attempt-1", "payment_method": "boleto",
+                    "provider_environment": "test", "status": "pending",
+                    "payable": True, "boleto_barcode": "23790000000000000000000000000000000000000000000",
+                    "payment_url": "https://example.test/boleto",
+                }],
+            }],
+        }
+        with patch.object(dialog, "_run", side_effect=lambda operation, done: done(operation())), \
+                patch("src.ui.screens.billing_dialog.QMessageBox.information") as information:
+            dialog._check_provider_status()
+        message = information.call_args.args[2]
+        self.assertIn("Não gere outro boleto", message)
+        self.assertNotIn("outro PIX", message)
 
     def test_non_owner_cannot_query_provider(self):
         dialog = self.create_dialog("member")
@@ -30,8 +84,9 @@ class BillingDialogTests(unittest.TestCase):
 
     def test_nonpayable_pending_still_allows_status_check(self):
         dialog = self.create_dialog()
-        dialog._loaded({"invoices": [{"status": "open", "total_amount": "350.00",
-            "billing_payment_attempts": [{"id": "pending-1", "status": "pending", "payable": False}]}]})
+        dialog._loaded({"payment_environment": "production", "invoices": [{"status": "open", "total_amount": "350.00",
+            "billing_payment_attempts": [{"id": "pending-1", "status": "pending",
+                "provider_environment": "production", "payable": False}]}]})
         dialog._set_busy(False)
         self.assertTrue(dialog.check_status_button.isEnabled())
         self.assertFalse(dialog.copy_button.isEnabled())
@@ -103,6 +158,58 @@ class BillingDialogTests(unittest.TestCase):
         self.assertTrue(dialog.qr_label.isHidden())
         self.assertTrue(dialog.qr_label.pixmap().isNull())
 
+    def test_test_environment_is_clearly_identified(self):
+        dialog = self.create_dialog("owner")
+        dialog._loaded({"payment_environment": "test", "invoices": []})
+        self.assertIn("AMBIENTE DE TESTE", dialog.environment_banner.text())
+        self.assertIn("não movimentam dinheiro real", dialog.environment_banner.text())
+        dialog._show_attempt(
+            {"total_amount": "1.00"},
+            {
+                "payment_method": "pix",
+                "provider_environment": "test",
+                "pix_copy_paste": "000201TESTE",
+            },
+        )
+        self.assertIn("AMBIENTE DE TESTE", dialog.result.text())
+        self.assertIn("não movimenta dinheiro real", dialog.result.text())
+
+    def test_test_boleto_explains_sandbox_and_labels_actions(self):
+        dialog = self.create_dialog("owner")
+        dialog._loaded({"payment_environment": "test", "invoices": []})
+        dialog._show_attempt(
+            {"id": "invoice-1", "status": "open", "total_amount": "50.00"},
+            {
+                "id": "attempt-1", "payment_method": "boleto",
+                "provider_environment": "test", "status": "pending",
+                "payable": True,
+                "boleto_barcode": "23790000000000000000000000000000000000000000000",
+                "payment_url": "https://example.test/boleto",
+            },
+        )
+        self.assertIn("linha digitável foi recebida", dialog.result.text())
+        self.assertIn("sandbox", dialog.result.text())
+        self.assertEqual(dialog.copy_button.text(), "Copiar linha digitável")
+        self.assertEqual(dialog.open_button.text(), "Abrir boleto no Mercado Pago")
+
+    def test_production_environment_warns_that_charge_is_real(self):
+        dialog = self.create_dialog("owner")
+        dialog._loaded({"payment_environment": "production", "invoices": []})
+        self.assertIn("AMBIENTE DE PRODUÇÃO", dialog.environment_banner.text())
+        self.assertIn("cobranças reais", dialog.environment_banner.text())
+
+    def test_provider_error_displays_safe_support_codes(self):
+        dialog = self.create_dialog("owner")
+        error = DesktopBackendError("PAYMENT_PROVIDER_ERROR", 502, {
+            "provider_code": "payer_email_invalid",
+            "support_code": "request-123",
+        })
+        with patch("src.ui.screens.billing_dialog.QMessageBox.warning") as warning:
+            dialog._show_error(error)
+        message = warning.call_args.args[2]
+        self.assertIn("payer_email_invalid", message)
+        self.assertIn("request-123", message)
+
     def test_changed_device_total_hides_old_pix_and_requests_new_charge(self):
         with patch.object(BillingDialog, "_load"):
             dialog = BillingDialog(
@@ -110,6 +217,7 @@ class BillingDialogTests(unittest.TestCase):
             )
         self.addCleanup(dialog.close)
         dialog._loaded({
+            "payment_environment": "production",
             "profile": None,
             "invoices": [{
                 "total_amount": "350.00",
@@ -153,7 +261,7 @@ class BillingDialogTests(unittest.TestCase):
 
     def test_server_reconciliation_disables_new_payments(self):
         dialog = self.create_dialog()
-        dialog._loaded({"reconciliation_required": True})
+        dialog._loaded({"payment_environment": "production", "reconciliation_required": True})
         dialog._set_busy(False)
         self.assertFalse(dialog.pix_button.isEnabled())
         self.assertFalse(dialog.boleto_button.isEnabled())
@@ -176,7 +284,7 @@ class BillingDialogTests(unittest.TestCase):
                 estimated_amount="300.00",
             )
         self.addCleanup(dialog.close)
-        dialog._loaded({"profile": None, "invoices": []})
+        dialog._loaded({"payment_environment": "production", "profile": None, "invoices": []})
         self.assertEqual(dialog.fields["legal_name"].text(), "Grupo Ipe Motos")
         self.assertEqual(dialog.fields["billing_cnpj"].text(), "27.588.108/0001-01")
         self.assertEqual(dialog.amount_value.text(), "R$ 300,00")

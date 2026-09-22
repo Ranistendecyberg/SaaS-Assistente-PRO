@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import threading
 import uuid
@@ -85,15 +87,58 @@ class LicenseManager:
 
         try:
             output = subprocess.check_output(
-                ["powershell", "-Command", "(Get-CimInstance -Class Win32_ComputerSystemProduct).UUID"], 
-                shell=True, stderr=subprocess.DEVNULL
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "(Get-CimInstance -Class Win32_ComputerSystemProduct).UUID",
+                ],
+                shell=False,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
             ).decode(errors="ignore").splitlines()
-            if len(output) > 1:
-                value = output[1].strip()
-                if len(value) >= 10 and value != "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF":
+            # O PowerShell normalmente devolve apenas uma linha. A leitura
+            # antiga exigia duas linhas e, por isso, quase sempre caía no MAC.
+            for line in output:
+                value = line.strip().upper()
+                if (
+                    re.fullmatch(
+                        r"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}",
+                        value,
+                    )
+                    and value not in {
+                        "00000000-0000-0000-0000-000000000000",
+                        "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF",
+                    }
+                ):
                     LicenseManager._cached_chassi = value
                     return value
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+        # Em algumas instalações corporativas o acesso ao WMI/CIM é negado.
+        # MachineGuid é estável entre mudanças de Wi-Fi, VPN e adaptadores,
+        # ao contrário de uuid.getnode(). Guardamos somente um hash derivado.
+        try:
+            import winreg
+
+            access = winreg.KEY_READ | getattr(winreg, "KEY_WOW64_64KEY", 0)
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Cryptography",
+                0,
+                access,
+            ) as key:
+                machine_guid = str(winreg.QueryValueEx(key, "MachineGuid")[0]).strip()
+            if len(machine_guid) >= 16:
+                digest = hashlib.sha256(
+                    f"SaaSAssistentePRO:{machine_guid}".encode("utf-8")
+                ).hexdigest().upper()
+                value = f"WIN-{digest[:32]}"
+                LicenseManager._cached_chassi = value
+                return value
+        except (ImportError, OSError, ValueError):
             pass
 
         fallback = str(uuid.getnode())

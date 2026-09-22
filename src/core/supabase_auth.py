@@ -93,7 +93,14 @@ class SupabaseUserClient:
                 body.get("error_code") or body.get("code") or body.get("error")
                 or body.get("msg") or "HTTP_ERROR"
             )
-            raise DesktopBackendError(code.upper(), error.code) from error
+            safe_details = {
+                key: str(body.get(key) or "").strip()[:180]
+                for key in ("provider_code", "support_code")
+                if body.get(key)
+            }
+            raise DesktopBackendError(
+                code.upper(), error.code, safe_details,
+            ) from error
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise DesktopBackendError("NETWORK_ERROR") from error
 
@@ -495,6 +502,13 @@ class SupabaseUserClient:
 
     def refresh_company_payment(self, company_id: str, attempt_id: str) -> Dict[str, Any]:
         return self.billing_request("refresh_payment_status", {
+            "company_id": str(company_id).strip(),
+            "attempt_id": str(attempt_id).strip(),
+        })
+
+    def cancel_test_company_payment(self, company_id: str, attempt_id: str) -> Dict[str, Any]:
+        """Cancela no provedor uma tentativa pendente criada em homologação."""
+        return self.billing_request("cancel_test_payment", {
             "company_id": str(company_id).strip(),
             "attempt_id": str(attempt_id).strip(),
         })

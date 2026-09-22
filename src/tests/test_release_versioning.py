@@ -11,8 +11,17 @@ class ReleaseVersioningTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('"--hidden-import", "PyQt6.sip"', build_script)
+        self.assertIn("python_runtime_openssl_binaries", build_script)
+        self.assertIn('("libssl-", "libcrypto-")', build_script)
         self.assertIn('desktop_exe, "--build-smoke-test"', build_script)
         self.assertIn("if smoke.returncode != 0", build_script)
+        self.assertIn("Exclui apenas dependências nativas auxiliares", build_script)
+        self.assertIn("dependencies", build_script)
+        self.assertIn("native", build_script)
+        self.assertNotIn(
+            "if '\\\\.cache\\\\codex-runtimes\\\\' not in str(entry[1]).lower()",
+            build_script,
+        )
 
     def test_updates_desktop_and_installer_as_one_release(self):
         with tempfile.TemporaryDirectory() as folder:

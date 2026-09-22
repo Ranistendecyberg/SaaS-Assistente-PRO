@@ -21,6 +21,7 @@ supabase/.temp/
 __pycache__/
 *.py[cod]
 /.venv/
+/.venv-release/
 /venv/
 /.pyarmor/
 /.build_tools/

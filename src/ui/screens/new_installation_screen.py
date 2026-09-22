@@ -302,9 +302,14 @@ class NewInstallationScreen(QDialog):
         self.password.clear()
         self.password_confirmation.clear()
         self._set_busy(False)
+        identification_note = (
+            "\nA identificação instável da versão anterior foi corrigida neste computador."
+            if result.get("hardware_rebound") else ""
+        )
         QMessageBox.information(self, "Acesso recuperado",
             "O acesso deste computador principal foi recuperado.\n"
-            "A licença, a validade e eventuais bloqueios foram preservados.")
+            "A licença, a validade e eventuais bloqueios foram preservados."
+            + identification_note)
         self.accept()
 
     def _run(self, operation, on_success, busy_text):

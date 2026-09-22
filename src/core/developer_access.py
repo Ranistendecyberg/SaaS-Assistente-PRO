@@ -41,10 +41,14 @@ class DeveloperAccessGuard:
 
             data = LicenseManager.get_instance().validar_licenca()
             value = data.get("diagnostico_detalhado_ate")
+            if data.get("status") not in {"ativa", "trial"} or not value:
+                allowed, reason = False, "DIAGNOSTIC_AUTHORIZATION_REQUIRED"
+                cls._authorization_cache = (now, allowed, reason)
+                return allowed, reason
             expires = dt.datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
             if expires.tzinfo is None:
                 expires = expires.replace(tzinfo=dt.timezone.utc)
-            allowed = data.get("status") in {"ativa", "trial"} and expires > dt.datetime.now(dt.timezone.utc)
+            allowed = expires > dt.datetime.now(dt.timezone.utc)
             reason = "" if allowed else "DIAGNOSTIC_AUTHORIZATION_REQUIRED"
         except Exception:
             allowed, reason = False, "DIAGNOSTIC_AUTHORIZATION_UNAVAILABLE"
@@ -82,4 +86,3 @@ class DeveloperAccessGuard:
                 remaining_attempts=remaining_attempts,
             )
             return False, f"INVALID:{remaining_attempts}"
-

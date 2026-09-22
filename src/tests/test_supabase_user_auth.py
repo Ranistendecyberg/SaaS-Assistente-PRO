@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -149,6 +150,11 @@ class SupabaseUserClientTests(unittest.TestCase):
                 "company_id": "company-1", "payment_method": "pix",
             })
 
+            self.client.cancel_test_company_payment(" company-1 ", " attempt-1 ")
+            request.assert_called_with("cancel_test_payment", {
+                "company_id": "company-1", "attempt_id": "attempt-1",
+            })
+
             self.client.save_billing_profile("company-1", {
                 "legal_name": "Grupo Teste Ltda", "billing_cnpj": "123",
                 "ignored_secret": "never-send",
@@ -156,6 +162,27 @@ class SupabaseUserClientTests(unittest.TestCase):
             payload = request.call_args.args[1]
             self.assertEqual(request.call_args.args[0], "save_billing_profile")
             self.assertNotIn("ignored_secret", payload)
+
+    def test_provider_error_keeps_only_safe_diagnostic_fields(self):
+        import io
+        import urllib.error
+
+        response = io.BytesIO(json.dumps({
+            "error": "PAYMENT_PROVIDER_ERROR",
+            "provider_code": "payer_email_invalid",
+            "support_code": "request-123",
+            "secret": "must-not-be-exposed",
+        }).encode("utf-8"))
+        http_error = urllib.error.HTTPError(
+            "https://example.invalid", 502, "Bad Gateway", {}, response,
+        )
+        with patch("urllib.request.urlopen", side_effect=http_error):
+            with self.assertRaises(DesktopBackendError) as caught:
+                self.client._request("POST", "https://example.invalid", {})
+        self.assertEqual(caught.exception.details, {
+            "provider_code": "payer_email_invalid",
+            "support_code": "request-123",
+        })
 
     def test_mfa_factors_only_expose_verified_totp_for_challenge(self):
         session = UserSession("access", "refresh", 9999999999, "user-123")

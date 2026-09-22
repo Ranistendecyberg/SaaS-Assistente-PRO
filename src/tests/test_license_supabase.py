@@ -1,7 +1,7 @@
 import datetime
 import unittest
 import uuid
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.core.license_manager import LicenseManager
 from src.core.supabase_desktop import DesktopBackendError
@@ -33,6 +33,20 @@ def manager_with(backend):
 
 
 class SupabaseLicenseTests(unittest.TestCase):
+    def tearDown(self):
+        LicenseManager._cached_chassi = ""
+
+    @patch(
+        "src.core.license_manager.subprocess.check_output",
+        return_value=b"12345678-1234-ABCD-9876-1234567890AB\r\n",
+    )
+    def test_hardware_uuid_aceita_saida_de_uma_linha_do_powershell(self, check_output):
+        LicenseManager._cached_chassi = ""
+        manager = LicenseManager.__new__(LicenseManager)
+        hardware_id = manager._obter_chassi_maquina()
+        self.assertEqual(hardware_id, "12345678-1234-ABCD-9876-1234567890AB")
+        self.assertFalse(check_output.call_args.kwargs["shell"])
+
     def test_converte_contrato_seguro_para_tela_legada(self):
         expiry = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=10)).isoformat()
         backend = FakeBackend({

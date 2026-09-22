@@ -4,11 +4,32 @@ import { normalizeCnpj, requireCompanyMember, validDocument, validEmail } from "
 
 const MP_ORDERS_URL = "https://api.mercadopago.com/v1/orders";
 const MP_PAYMENTS_URL = "https://api.mercadopago.com/v1/payments";
+type PaymentEnvironment = "production" | "test";
+type ProviderResourceType = "payment" | "order";
 
 function env(name: string): string {
   const value = Deno.env.get(name) || "";
   if (!value) throw new Error("SERVER_CONFIGURATION_ERROR");
   return value;
+}
+
+function paymentSecret(environment: PaymentEnvironment, kind: "token" | "webhook"): string {
+  if (environment === "test") {
+    return env(kind === "token"
+      ? "MERCADO_PAGO_TEST_ACCESS_TOKEN"
+      : "MERCADO_PAGO_TEST_WEBHOOK_SECRET");
+  }
+  return env(kind === "token"
+    ? "MERCADO_PAGO_ACCESS_TOKEN"
+    : "MERCADO_PAGO_WEBHOOK_SECRET");
+}
+
+function normalizePaymentEnvironment(value: unknown): PaymentEnvironment {
+  return cleanText(value, 20).toLowerCase() === "test" ? "test" : "production";
+}
+
+function normalizeProviderResource(value: unknown): ProviderResourceType {
+  return cleanText(value, 20).toLowerCase() === "order" ? "order" : "payment";
 }
 
 function safeAmount(value: unknown): string {
@@ -74,13 +95,18 @@ class MercadoPagoRequestError extends Error {
   }
 }
 
-async function mercadoPago(baseUrl: string, path: string, init: RequestInit = {}) {
+async function mercadoPago(
+  baseUrl: string,
+  path: string,
+  init: RequestInit = {},
+  environment: PaymentEnvironment = "production",
+) {
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${env("MERCADO_PAGO_ACCESS_TOKEN")}`,
+      "Authorization": `Bearer ${paymentSecret(environment, "token")}`,
       ...(init.headers || {}),
     },
   });
@@ -136,11 +162,25 @@ async function cancelSupersededAttempts(client: any, attempts: unknown) {
       // Boleto/Order requer conferência; nunca ignorar uma cobrança ainda pagável.
       throw new Error("PAYMENT_RECONCILIATION_REQUIRED");
     }
+    let environment = normalizePaymentEnvironment(attempt.provider_environment);
+    let resourceType = normalizeProviderResource(attempt.provider_resource_type);
+    if (!attempt.provider_environment) {
+      const { data: stored, error: lookupError } = await client
+        .from("billing_payment_attempts")
+        .select("provider_environment,provider_resource_type")
+        .eq("id", attemptId)
+        .single();
+      if (lookupError) throw lookupError;
+      environment = normalizePaymentEnvironment(stored?.provider_environment);
+      resourceType = normalizeProviderResource(stored?.provider_resource_type);
+    }
+    if (resourceType !== "payment") throw new Error("PAYMENT_RECONCILIATION_REQUIRED");
 
     const providerPayment = await mercadoPago(
       MP_PAYMENTS_URL,
       `/${encodeURIComponent(providerId)}`,
       { method: "GET" },
+      environment,
     );
     let providerStatus = cleanText(providerPayment.status, 80).toLowerCase();
     if (["pending", "in_process", "authorized"].includes(providerStatus)) {
@@ -148,6 +188,7 @@ async function cancelSupersededAttempts(client: any, attempts: unknown) {
         MP_PAYMENTS_URL,
         `/${encodeURIComponent(providerId)}`,
         { method: "PUT", body: JSON.stringify({ status: "cancelled" }) },
+        environment,
       );
       providerStatus = cleanText(cancelled.status, 80).toLowerCase();
     }
@@ -165,7 +206,11 @@ async function cancelSupersededAttempts(client: any, attempts: unknown) {
   }
 }
 
-async function validWebhook(req: Request, dataId: string): Promise<boolean> {
+async function validWebhook(
+  req: Request,
+  dataId: string,
+  environment: PaymentEnvironment,
+): Promise<boolean> {
   const signature = req.headers.get("x-signature") || "";
   const requestId = req.headers.get("x-request-id") || "";
   const pieces = Object.fromEntries(signature.split(",").map((part) => {
@@ -177,7 +222,7 @@ async function validWebhook(req: Request, dataId: string): Promise<boolean> {
   if (!timestamp || !received || !requestId || !dataId) return false;
   const manifest = `id:${dataId.toLowerCase()};request-id:${requestId};ts:${timestamp};`;
   const key = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(env("MERCADO_PAGO_WEBHOOK_SECRET")),
+    "raw", new TextEncoder().encode(paymentSecret(environment, "webhook")),
     { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
   );
   if (!/^[0-9a-f]{64}$/i.test(received)) return false;
@@ -197,12 +242,18 @@ function paymentInfo(order: any) {
   };
 }
 
-async function reconcileProvider(providerId: string, providerType: string, expectedReference?: string) {
+async function reconcileProvider(
+  providerId: string,
+  providerType: string,
+  expectedReference?: string,
+  environment: PaymentEnvironment = "production",
+) {
   const isPayment = providerType === "payment";
   const providerData = await mercadoPago(
     isPayment ? MP_PAYMENTS_URL : MP_ORDERS_URL,
     `/${encodeURIComponent(providerId)}`,
     { method: "GET" },
+    environment,
   );
   if (expectedReference !== undefined && (
     String(providerData.id) !== providerId || providerData.external_reference !== expectedReference
@@ -227,9 +278,24 @@ Deno.serve(async (req) => {
   if (req.method === "POST" && url.searchParams.get("webhook") === "mercado_pago") {
     try {
       const dataId = cleanText(url.searchParams.get("data.id") || url.searchParams.get("data_id"), 180);
-      if (!await validWebhook(req, dataId)) return jsonResponse({ error: "INVALID_SIGNATURE" }, 401);
+      const environment = normalizePaymentEnvironment(url.searchParams.get("environment"));
+      if (!await validWebhook(req, dataId, environment)) return jsonResponse({ error: "INVALID_SIGNATURE" }, 401);
+      const client = serviceClient();
+      const { data: storedAttempt, error: attemptError } = await client
+        .from("billing_payment_attempts")
+        .select("provider_environment,provider_resource_type")
+        .eq("provider_order_id", dataId)
+        .maybeSingle();
+      if (attemptError) throw attemptError;
+      if (!storedAttempt || normalizePaymentEnvironment(storedAttempt.provider_environment) !== environment) {
+        return jsonResponse({ error: "PAYMENT_ENVIRONMENT_MISMATCH" }, 409);
+      }
       const providerType = cleanText(url.searchParams.get("type") || url.searchParams.get("topic"), 40);
-      await reconcileProvider(dataId, providerType === "payment" ? "payment" : "order");
+      const notifiedResource = providerType === "payment" ? "payment" : "order";
+      if (normalizeProviderResource(storedAttempt.provider_resource_type) !== notifiedResource) {
+        return jsonResponse({ error: "PAYMENT_RESOURCE_MISMATCH" }, 409);
+      }
+      await reconcileProvider(dataId, notifiedResource, undefined, environment);
       return jsonResponse({ ok: true });
     } catch (error) {
       const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
@@ -245,10 +311,107 @@ Deno.serve(async (req) => {
     const companyId = cleanText(body.company_id, 64);
     const { client, user, payload } = await requireUser(req);
     const mutation = action === "save_billing_profile";
-    const ownerOnly = ["save_billing_profile", "create_payment", "refresh_payment_status"].includes(action);
+    const ownerOnly = [
+      "save_billing_profile", "create_payment", "refresh_payment_status",
+      "cancel_test_payment",
+    ].includes(action);
     await requireCompanyMember(client, user.id, companyId, {
       mutation, ownerOnly, payload,
     });
+
+    if (action === "cancel_test_payment") {
+      const attemptId = cleanText(body.attempt_id, 64);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(attemptId)) {
+        return jsonResponse({ error: "INVALID_ATTEMPT_ID" }, 400);
+      }
+      const { data: testCompany, error: testError } = await client
+        .from("billing_payment_test_companies")
+        .select("company_id")
+        .eq("company_id", companyId)
+        .gt("expires_at", new Date().toISOString())
+        .maybeSingle();
+      if (testError) throw testError;
+      if (!testCompany) return jsonResponse({ error: "TEST_PAYMENT_REQUIRED" }, 403);
+
+      const { data: attempt, error: attemptError } = await client
+        .from("billing_payment_attempts")
+        .select("id,invoice_id,status,provider_order_id,external_reference,provider_environment,provider_resource_type")
+        .eq("id", attemptId)
+        .single();
+      if (attemptError) throw attemptError;
+      const { data: invoice, error: invoiceError } = await client
+        .from("billing_invoices")
+        .select("id,company_id,status")
+        .eq("id", attempt.invoice_id)
+        .eq("company_id", companyId)
+        .single();
+      if (invoiceError) throw invoiceError;
+      if (!invoice || normalizePaymentEnvironment(attempt.provider_environment) !== "test") {
+        return jsonResponse({ error: "PAYMENT_ENVIRONMENT_MISMATCH" }, 409);
+      }
+      if (normalizeProviderResource(attempt.provider_resource_type) !== "order") {
+        return jsonResponse({ error: "PAYMENT_RESOURCE_MISMATCH" }, 409);
+      }
+      if (attempt.status !== "pending") {
+        return jsonResponse({
+          ok: true,
+          cancelled: attempt.status === "cancelled",
+          attempt_status: attempt.status,
+        });
+      }
+      const providerId = cleanText(attempt.provider_order_id, 180);
+      if (!providerId) return jsonResponse({ error: "PAYMENT_NOT_RECORDED" }, 409);
+
+      const current = await mercadoPago(
+        MP_ORDERS_URL, `/${encodeURIComponent(providerId)}`, { method: "GET" }, "test",
+      );
+      if (String(current.id) !== providerId || current.external_reference !== attempt.external_reference) {
+        throw new Error("PAYMENT_PROVIDER_IDENTITY_MISMATCH");
+      }
+      const currentStatus = cleanText(current.status, 80).toLowerCase();
+      const currentDetail = cleanText(current.status_detail, 120).toLowerCase();
+      if (currentStatus === "approved" ||
+          (currentStatus === "processed" && currentDetail === "accredited")) {
+        const result = await reconcileProvider(providerId, "order", attempt.external_reference, "test");
+        return jsonResponse({ ok: true, cancelled: false, result });
+      }
+
+      let cancelled = current;
+      if (!["canceled", "cancelled"].includes(currentStatus)) {
+        if (!["created", "action_required", "pending"].includes(currentStatus)) {
+          return jsonResponse({ error: "PAYMENT_RECONCILIATION_REQUIRED" }, 409);
+        }
+        cancelled = await mercadoPago(
+          MP_ORDERS_URL,
+          `/${encodeURIComponent(providerId)}/cancel`,
+          {
+            method: "POST",
+            headers: { "X-Idempotency-Key": `cancel-${attempt.id}` },
+          },
+          "test",
+        );
+      }
+      const cancelledStatus = cleanText(cancelled.status, 80).toLowerCase();
+      if (!["canceled", "cancelled"].includes(cancelledStatus)) {
+        throw new Error("PAYMENT_REPRICE_CANCELLATION_FAILED");
+      }
+      const { data: stored, error: storeError } = await client
+        .from("billing_payment_attempts")
+        .update({
+          status: "cancelled",
+          provider_status: cancelledStatus,
+          provider_status_detail: cleanText(cancelled.status_detail, 120) || "test_cleanup_cancelled",
+          payment_url: null,
+          pix_copy_paste: null,
+          boleto_barcode: null,
+        })
+        .eq("id", attempt.id)
+        .eq("status", "pending")
+        .select("id,status,provider_status,provider_status_detail")
+        .single();
+      if (storeError) throw storeError;
+      return jsonResponse({ ok: true, cancelled: true, attempt: stored });
+    }
 
     if (action === "refresh_payment_status") {
       const attemptId = cleanText(body.attempt_id, 64);
@@ -265,26 +428,31 @@ Deno.serve(async (req) => {
           : code === "OWNER_REQUIRED" ? 403 : code === "PAYMENT_NOT_FOUND" ? 404 : 409);
       }
       if (!["pix", "boleto"].includes(claim.payment_method)) throw new Error("INVALID_PAYMENT_METHOD");
+      const environment = normalizePaymentEnvironment(claim.provider_environment);
       const result = await reconcileProvider(claim.provider_id,
-        claim.payment_method === "pix" ? "payment" : "order", claim.external_reference);
+        normalizeProviderResource(claim.provider_resource_type), claim.external_reference,
+        environment);
       return jsonResponse({ ok: true, result });
     }
 
     if (action === "billing_summary") {
-      const [profile, invoices, installations, cases, subscription] = await Promise.all([
+      const [profile, invoices, installations, cases, subscription, testCompany] = await Promise.all([
         client.from("billing_profiles").select("*").eq("company_id", companyId).maybeSingle(),
         client.from("billing_invoices")
-          .select("id, period_start, period_end, due_at, principal_seats, additional_seats, installation_ids, base_price, additional_seat_price, total_amount, status, paid_at, billing_payment_attempts(id, payment_method, status, invoice_snapshot, payment_url, pix_copy_paste, boleto_barcode, expires_at)")
+          .select("id, period_start, period_end, due_at, principal_seats, additional_seats, installation_ids, base_price, additional_seat_price, total_amount, status, paid_at, billing_payment_attempts(id, payment_method, provider_environment, provider_resource_type, status, invoice_snapshot, payment_url, pix_copy_paste, boleto_barcode, expires_at)")
           .eq("company_id", companyId).order("created_at", { ascending: false }).limit(24),
         client.from("installations").select("id").eq("company_id",companyId).neq("billing_status","removed"),
         client.from("billing_reconciliation_cases").select("attempt_id").eq("company_id",companyId).is("resolved_at",null).limit(1),
         client.from("company_subscriptions").select("base_price,additional_seat_price,status").eq("company_id",companyId).single(),
+        client.from("billing_payment_test_companies").select("company_id")
+          .eq("company_id", companyId).gt("expires_at", new Date().toISOString()).maybeSingle(),
       ]);
       if (profile.error) throw profile.error;
       if (invoices.error) throw invoices.error;
       if (installations.error) throw installations.error;
       if (cases.error) throw cases.error;
       if (subscription.error) throw subscription.error;
+      if (testCompany.error) throw testCompany.error;
       const ids = JSON.stringify((installations.data || []).map((row: any) => row.id).sort());
       for (const invoice of invoices.data || []) {
         for (const attempt of invoice.billing_payment_attempts || []) {
@@ -302,6 +470,7 @@ Deno.serve(async (req) => {
         }
       }
       return jsonResponse({ ok: true, profile: profile.data, invoices: invoices.data || [],
+        payment_environment: testCompany.data ? "test" : "production",
         reconciliation_required: !!(cases.data || []).length });
     }
 
@@ -359,24 +528,50 @@ Deno.serve(async (req) => {
         return jsonResponse({ ok: true, reused: true, invoice, attempt });
       }
       if (attempt.status !== "pending") throw new Error("PAYMENT_RECONCILIATION_REQUIRED");
+      const environment = normalizePaymentEnvironment(attempt.provider_environment);
+      const resourceType = normalizeProviderResource(attempt.provider_resource_type);
 
       const paymentMethod = method === "pix"
         ? { id: "pix", type: "bank_transfer" }
         : { id: "boleto", type: "ticket" };
-      const payer: Record<string, unknown> = { email: profile.billing_email };
+      const payerEmail = environment === "test"
+        ? "test_user_br@testuser.com"
+        : profile.billing_email;
+      const payer: Record<string, unknown> = { email: payerEmail };
       if (method === "boleto") {
-        const [firstName, lastName] = splitName(profile.legal_name);
-        payer.first_name = firstName;
-        payer.last_name = lastName;
-        payer.identification = { type: profile.billing_cnpj.length === 11 ? "CPF" : "CNPJ", number: profile.billing_cnpj };
-        payer.address = {
-          zip_code: profile.postal_code,
-          street_name: profile.street,
-          street_number: profile.street_number || "S/N",
-          neighborhood: profile.neighborhood,
-          city: profile.city,
-          state: profile.state,
-        };
+        if (environment === "test") {
+          // Dados fictícios publicados pelo Mercado Pago para homologação.
+          // Nunca transmitir os dados reais do cliente junto às credenciais de teste.
+          Object.assign(payer, {
+            first_name: "John",
+            last_name: "Doe",
+            identification: { type: "CPF", number: "99999999999" },
+            address: {
+              zip_code: "06233903",
+              street_name: "Av. das Nações Unidas",
+              street_number: "3003",
+              neighborhood: "Bonfim",
+              city: "Osasco",
+              state: "SP",
+            },
+          });
+        } else {
+          const [firstName, lastName] = splitName(profile.legal_name);
+          payer.first_name = firstName;
+          payer.last_name = lastName;
+          payer.identification = {
+            type: profile.billing_cnpj.length === 11 ? "CPF" : "CNPJ",
+            number: profile.billing_cnpj,
+          };
+          payer.address = {
+            zip_code: profile.postal_code,
+            street_name: profile.street,
+            street_number: profile.street_number || "S/N",
+            neighborhood: profile.neighborhood,
+            city: profile.city,
+            state: profile.state,
+          };
+        }
       }
       const amount = safeAmount(invoice.total_amount);
       const payment: Record<string, unknown> = {
@@ -385,7 +580,7 @@ Deno.serve(async (req) => {
       };
       if (method === "boleto") payment.expiration_time = "P3D";
       const createProviderCharge = (currentAttempt: any) => {
-        if (method === "pix") {
+        if (resourceType === "payment") {
           // Mantem o fluxo comprovado da versao 1.9.6: Payments API.
           return mercadoPago(MP_PAYMENTS_URL, "", {
             method: "POST",
@@ -394,24 +589,30 @@ Deno.serve(async (req) => {
               transaction_amount: Number(amount),
               description: `SaaS Assistente PRO - ${invoice.period_start} a ${invoice.period_end}`,
               payment_method_id: "pix",
-              notification_url: `${env("SUPABASE_URL")}/functions/v1/billing-api?webhook=mercado_pago`,
+              notification_url: `${env("SUPABASE_URL")}/functions/v1/billing-api?webhook=mercado_pago&environment=${environment}`,
               external_reference: currentAttempt.external_reference,
-              payer: { email: profile.billing_email },
+              payer: { email: payerEmail },
             }),
-          });
+          }, environment);
         }
+        const orderPayer = environment === "test" && method === "pix"
+          ? { email: payerEmail, first_name: "APRO" }
+          : payer;
+        const orderProcessing = environment === "test" && method === "pix"
+          ? {}
+          : { processing_mode: "automatic" };
         return mercadoPago(MP_ORDERS_URL, "", {
           method: "POST",
           headers: { "X-Idempotency-Key": currentAttempt.idempotency_key },
           body: JSON.stringify({
             type: "online",
-            processing_mode: "automatic",
+            ...orderProcessing,
             total_amount: amount,
             external_reference: currentAttempt.external_reference,
-            payer,
+            payer: orderPayer,
             transactions: { payments: [payment] },
           }),
-        });
+        }, environment);
       };
       let order;
       try {
@@ -456,6 +657,13 @@ Deno.serve(async (req) => {
     if (status === 500) console.error("Billing API failed", code);
     // Falhas conhecidas do provedor devem chegar ao Desktop com um codigo
     // seguro e acionavel. Somente erros internos inesperados sao ocultados.
-    return jsonResponse({ error: status === 500 ? "INTERNAL_ERROR" : code }, status);
+    const response: Record<string, unknown> = {
+      error: status === 500 ? "INTERNAL_ERROR" : code,
+    };
+    if (error instanceof MercadoPagoRequestError) {
+      response.provider_code = error.providerCode || undefined;
+      response.support_code = error.requestId || undefined;
+    }
+    return jsonResponse(response, status);
   }
 });

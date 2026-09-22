@@ -61,6 +61,7 @@ class BillingDialog(QDialog):
         self._defaults = dict(defaults or {})
         self._estimated_amount = estimated_amount
         self._reconciliation_required = False
+        self._payment_environment = ""
         self.setWindowTitle("Cobrança empresarial — SaaS Assistente PRO")
         self.resize(760, 760)
         self.setMinimumSize(620, 560)
@@ -93,6 +94,14 @@ class BillingDialog(QDialog):
         description.setWordWrap(True)
         description.setStyleSheet("color:#64748B;font-size:13px;")
         layout.addWidget(description)
+
+        self.environment_banner = QLabel("Confirmando o ambiente de pagamento...")
+        self.environment_banner.setWordWrap(True)
+        self.environment_banner.setStyleSheet(
+            "background:#F1F5F9;border:1px solid #CBD5E1;border-radius:10px;"
+            "padding:12px;color:#475569;font-size:13px;font-weight:800;"
+        )
+        layout.addWidget(self.environment_banner)
 
         amount_card = QFrame()
         amount_card.setObjectName("billingAmountCard")
@@ -208,7 +217,7 @@ class BillingDialog(QDialog):
         result_actions.addWidget(self.open_button)
         result_actions.addStretch()
         payment_layout.addLayout(result_actions)
-        self.check_status_button = QPushButton("Já paguei — consultar Mercado Pago")
+        self.check_status_button = QPushButton("Consultar status no Mercado Pago")
         self.check_status_button.setStyleSheet(self._outline_button())
         self.check_status_button.clicked.connect(self._check_provider_status)
         payment_layout.addWidget(self.check_status_button)
@@ -302,6 +311,26 @@ class BillingDialog(QDialog):
 
     def _loaded(self, response):
         self._clear_payment()
+        environment = str(response.get("payment_environment") or "").strip().lower()
+        if environment not in {"test", "production"}:
+            raise ValueError("INVALID_PAYMENT_ENVIRONMENT")
+        self._payment_environment = environment
+        if environment == "test":
+            self.environment_banner.setText(
+                "AMBIENTE DE TESTE — PIX e boleto são simulados e não movimentam dinheiro real."
+            )
+            self.environment_banner.setStyleSheet(
+                "background:#FFF7ED;border:2px solid #F97316;border-radius:10px;"
+                "padding:12px;color:#9A3412;font-size:13px;font-weight:900;"
+            )
+        else:
+            self.environment_banner.setText(
+                "AMBIENTE DE PRODUÇÃO — PIX e boleto gerados nesta tela são cobranças reais."
+            )
+            self.environment_banner.setStyleSheet(
+                "background:#ECFDF5;border:2px solid #10B981;border-radius:10px;"
+                "padding:12px;color:#065F46;font-size:13px;font-weight:900;"
+            )
         invoices = list(response.get("invoices") or [])
         attempts = list(invoices[0].get("billing_payment_attempts") or []) if invoices else []
         self._status_attempt_id = str(next((row.get("id") for row in attempts
@@ -356,6 +385,12 @@ class BillingDialog(QDialog):
 
     def _show_attempt(self, invoice, attempt, reused=False):
         self._clear_payment()
+        attempt_environment = str(attempt.get("provider_environment") or "").strip().lower()
+        if attempt_environment in {"test", "production"}:
+            if self._payment_environment and attempt_environment != self._payment_environment:
+                raise ValueError("PAYMENT_ENVIRONMENT_MISMATCH")
+        elif self._payment_environment:
+            raise ValueError("INVALID_PAYMENT_ENVIRONMENT")
         if attempt.get("id"):
             self._status_attempt_id = str(attempt["id"])
         try:
@@ -374,10 +409,23 @@ class BillingDialog(QDialog):
         method = "PIX" if attempt.get("payment_method") == "pix" else "boleto"
         amount = self._money(invoice.get("total_amount"))
         reused_text = " A tentativa existente foi reaproveitada com segurança." if reused else ""
-        self.result.setText(
-            f"{method} da fatura no valor de {amount} gerado."
-            f"{reused_text}\nO acesso será renovado somente após a confirmação do Mercado Pago."
+        environment_text = (
+            "AMBIENTE DE TESTE — esta cobrança não movimenta dinheiro real.\n"
+            if attempt_environment == "test" else ""
         )
+        boleto_test_note = (
+            "\nA linha digitável foi recebida. A página externa do sandbox pode não ser exibida; "
+            "isso não invalida a criação do boleto de teste."
+            if method == "boleto" and attempt_environment == "test" else ""
+        )
+        self.result.setText(
+            f"{environment_text}{method} da fatura no valor de {amount} gerado."
+            f"{reused_text}\nO acesso será renovado somente após a confirmação do Mercado Pago."
+            f"{boleto_test_note}"
+        )
+        if method == "boleto":
+            self.copy_button.setText("Copiar linha digitável")
+            self.open_button.setText("Abrir boleto no Mercado Pago")
         self._show_pix_qr(self._payment_code() if method == "PIX" else "")
         self._refresh_timer.start()
 
@@ -416,6 +464,8 @@ class BillingDialog(QDialog):
     def _clear_payment(self):
         self._last_attempt = {}
         self._show_pix_qr("")
+        self.copy_button.setText("Copiar código")
+        self.open_button.setText("Abrir pagamento")
         self.copy_button.setEnabled(False)
         self.open_button.setEnabled(False)
 
@@ -433,10 +483,32 @@ class BillingDialog(QDialog):
             result, summary = response
             self._loaded(summary)
             outcome = result.get("result") or {}
+            payment_method = str(self._last_attempt.get("payment_method") or "pix").lower()
+            payment_name = "boleto" if payment_method == "boleto" else "PIX"
             if outcome.get("reconciliation_required") or summary.get("reconciliation_required"):
-                self.result.setText("Pagamento em conferência. Não pague novamente; contate o suporte.")
+                message = "Pagamento em conferência. Não pague novamente; contate o suporte."
             elif outcome.get("invoice_status") == "paid":
-                self.result.setText("Pagamento confirmado pelo provedor. Atualize a Conta Empresarial para conferir a vigência.")
+                message = (
+                    "Pagamento confirmado pelo provedor. "
+                    "Atualize a Conta Empresarial para conferir a vigência."
+                )
+            elif outcome.get("attempt_status") == "pending":
+                message = (
+                    "Mercado Pago consultado: o pagamento ainda aguarda confirmação. "
+                    f"Não gere outro {payment_name}; consulte novamente mais tarde."
+                )
+            elif outcome.get("attempt_status") in {"rejected", "cancelled", "expired", "refunded"}:
+                message = (
+                    "Mercado Pago consultado: esta tentativa não está mais disponível para pagamento. "
+                    "Atualize a cobrança antes de tentar novamente."
+                )
+            else:
+                message = (
+                    "Consulta concluída, mas o provedor ainda não informou um estado final. "
+                    "Não gere outro pagamento; tente consultar novamente mais tarde."
+                )
+            self.result.setText(message)
+            QMessageBox.information(self, "Status do pagamento", message)
 
         self.result.setText("Consultando o Mercado Pago. Não gere outro pagamento enquanto aguarda.")
         self._run(operation, received)
@@ -531,6 +603,12 @@ class BillingDialog(QDialog):
                 self._reconciliation_required = True
                 self._set_busy(False)
             message = messages.get(error.code, friendly_desktop_error(error))
+            provider_code = str(error.details.get("provider_code") or "").strip()
+            support_code = str(error.details.get("support_code") or "").strip()
+            if error.code == "PAYMENT_PROVIDER_ERROR" and provider_code:
+                message += f"\n\nMotivo técnico: {provider_code}"
+            if support_code:
+                message += f"\nCódigo para o suporte: {support_code}"
         else:
             message = "Não foi possível concluir a operação de cobrança."
         QMessageBox.warning(self, "Cobrança empresarial", message)

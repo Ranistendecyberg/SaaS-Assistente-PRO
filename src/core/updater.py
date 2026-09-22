@@ -6,7 +6,9 @@ import time
 import hashlib
 import re
 import shutil
+import ssl
 import tempfile
+import certifi
 from urllib.parse import urlparse
 from PyQt6.QtWidgets import (
     QMessageBox, QApplication, QDialog, QVBoxLayout, 
@@ -16,6 +18,47 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
 # Pega as configurações de nuvem compartilhadas
 from src.core.license_manager import LicenseManager
+
+
+_TLS_SERVER_AUTH_OID = "1.3.6.1.5.5.7.3.1"
+
+
+def create_update_ssl_context():
+    """Cria um contexto HTTPS verificável em Python empacotado no Windows.
+
+    O bundle do certifi garante as autoridades públicas mesmo dentro do
+    executável one-file. Os certificados confiáveis do Windows são adicionados
+    para redes corporativas que inspecionam HTTPS com uma autoridade interna.
+    A validação do certificado e do nome do servidor permanece obrigatória.
+    """
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+
+    enum_certificates = getattr(ssl, "enum_certificates", None)
+    if enum_certificates is None:
+        return context
+
+    trusted_pem = []
+    seen = set()
+    for store_name in ("ROOT", "CA"):
+        try:
+            certificates = enum_certificates(store_name)
+        except OSError:
+            continue
+        for certificate, encoding, trust in certificates:
+            if encoding != "x509_asn":
+                continue
+            if trust is not True and _TLS_SERVER_AUTH_OID not in trust:
+                continue
+            fingerprint = hashlib.sha256(certificate).digest()
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            trusted_pem.append(ssl.DER_cert_to_PEM_cert(certificate))
+
+    if trusted_pem:
+        context.load_verify_locations(cadata="\n".join(trusted_pem))
+    return context
 
 
 def validate_installer_file(path, expected_sha256):
@@ -61,7 +104,8 @@ class DownloadWorker(QThread):
                 except FileNotFoundError:
                     pass
             req = urllib.request.Request(self.url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-            with urllib.request.urlopen(req, timeout=30) as response:
+            ssl_context = create_update_ssl_context()
+            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
                 total_size = int(response.info().get('Content-Length', -1))
                 downloaded = 0
                 block_size = 65536

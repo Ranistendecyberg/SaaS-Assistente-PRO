@@ -180,6 +180,27 @@ class MessagingTests(unittest.TestCase):
         finally:
             DeveloperAccessGuard._failures, DeveloperAccessGuard._blocked_until = original
 
+    @patch('src.core.license_manager.LicenseManager.get_instance')
+    def test_missing_diagnostic_authorization_is_not_reported_as_connection_error(self, get_manager):
+        get_manager.return_value.validar_licenca.return_value = {
+            'status': 'ativa',
+            'diagnostico_detalhado_ate': None,
+        }
+
+        self.assertEqual(
+            DeveloperAccessGuard.authorization_status(force=True),
+            (False, 'DIAGNOSTIC_AUTHORIZATION_REQUIRED'),
+        )
+
+    @patch('src.core.license_manager.LicenseManager.get_instance')
+    def test_diagnostic_connection_failure_remains_unavailable(self, get_manager):
+        get_manager.return_value.validar_licenca.side_effect = OSError('offline')
+
+        self.assertEqual(
+            DeveloperAccessGuard.authorization_status(force=True),
+            (False, 'DIAGNOSTIC_AUTHORIZATION_UNAVAILABLE'),
+        )
+
     @patch('src.ui.screens.whatsapp_screen.QInputDialog.getText', return_value=('@1234', True))
     @patch.object(DeveloperAccessGuard, 'verify_password', return_value=(True, 'OK'))
     @patch.object(DeveloperAccessGuard, 'authorization_status', return_value=(True, ''))

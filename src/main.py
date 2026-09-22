@@ -4,30 +4,46 @@ import traceback
 # Garante que o diretório raiz seja reconhecido no PYTHONPATH
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from PyQt6 import QtWebEngineWidgets
-from PyQt6.QtWidgets import QApplication, QMessageBox
-from src.ui.main_window import MainWindow
-from src.core.backup_manager import BackupManager
-from src.core.paths import get_base_dir
-from src.core.telemetry import record_event
+_BUILD_SMOKE_TEST = (
+    "--build-smoke-test" in sys.argv
+    or os.environ.get("SAAS_BUILD_SMOKE_TEST", "").strip() == "1"
+)
+
+if not _BUILD_SMOKE_TEST:
+    from PyQt6 import QtWebEngineWidgets
+    from PyQt6.QtWidgets import QApplication, QMessageBox
+    from src.ui.main_window import MainWindow
+    from src.core.backup_manager import BackupManager
+    from src.core.paths import get_base_dir
+    from src.core.telemetry import record_event
 
 def _run_build_smoke_test():
     """Importa os módulos essenciais sem abrir janelas nem alterar dados."""
-    import PyQt6.sip
-    from PyQt6 import QtCore, QtGui, QtWidgets, QtWebEngineCore, QtWebEngineWidgets
-    import bs4
-    import pandas
-    import PIL
-    import qrcode
-    import requests
-    from src.ui.screens import (
-        about_screen, billing_dialog, company_account_screen, config_screen,
-        dashboard_comparativo_screen, dashboard_screen, dashboard_ssi_screen,
-        extraction_screen, license_screen, new_installation_screen,
-        password_recovery_dialog, suggestions_screen, terms_dialog,
-        tutorial_screen, user_login_dialog, whatsapp_screen,
-    )
-    return 0
+    try:
+        import PyQt6.sip
+        from PyQt6 import QtCore, QtGui, QtWidgets, QtWebEngineCore, QtWebEngineWidgets
+        import bs4
+        import pandas
+        import PIL
+        import qrcode
+        import requests
+        from src.ui.screens import (
+            about_screen, billing_dialog, company_account_screen, config_screen,
+            dashboard_comparativo_screen, dashboard_screen, dashboard_ssi_screen,
+            extraction_screen, license_screen, new_installation_screen,
+            password_recovery_dialog, suggestions_screen, terms_dialog,
+            tutorial_screen, user_login_dialog, whatsapp_screen,
+        )
+        return 0
+    except BaseException:
+        log_path = os.environ.get("SAAS_BUILD_SMOKE_LOG", "").strip()
+        if log_path:
+            try:
+                with open(log_path, "w", encoding="utf-8") as smoke_log:
+                    smoke_log.write(traceback.format_exc())
+            except OSError:
+                pass
+        return 1
 
 def global_exception_handler(exc_type, exc_value, exc_traceback):
     log_path = os.path.join(get_base_dir(), 'app_data', 'crash_log.txt')
@@ -46,7 +62,7 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
     sys.exit(1)
 
 def main():
-    if "--build-smoke-test" in sys.argv:
+    if _BUILD_SMOKE_TEST:
         return _run_build_smoke_test()
 
     sys.excepthook = global_exception_handler

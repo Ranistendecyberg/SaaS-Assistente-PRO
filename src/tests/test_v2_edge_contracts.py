@@ -6,6 +6,16 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class V2EdgeContractsTests(unittest.TestCase):
+    def test_legacy_hardware_recovery_preserves_seat_and_requires_owner(self):
+        sql = (ROOT / "supabase/migrations/030_v2_legacy_hardware_recovery.sql").read_text("utf-8")
+        self.assertIn("m.role = 'owner'", sql)
+        self.assertIn("v_candidate_count <> 1", sql)
+        self.assertIn("i.hardware_id ~ '^[0-9]{12,20}$'", sql)
+        self.assertIn("hardware_rebound", sql)
+        self.assertNotIn("insert into public.licenses", sql.lower())
+        self.assertNotIn("update public.licenses", sql.lower())
+        self.assertIn("to service_role", sql)
+
     def test_device_link_redemption_is_atomic_and_never_persists_plain_token(self):
         sql = (ROOT / "supabase/migrations/010_v2_device_link_redemption.sql").read_text("utf-8")
         self.assertIn("for update", sql.lower())
@@ -38,7 +48,8 @@ class V2EdgeContractsTests(unittest.TestCase):
     def test_billing_profile_uses_email_otp_but_payment_generation_does_not(self):
         source = (ROOT / "supabase/functions/billing-api/index.ts").read_text("utf-8")
         self.assertIn('const mutation = action === "save_billing_profile"', source)
-        self.assertIn('["save_billing_profile", "create_payment", "refresh_payment_status"].includes(action)', source)
+        self.assertIn('"save_billing_profile", "create_payment", "refresh_payment_status",', source)
+        self.assertIn('"cancel_test_payment",', source)
         self.assertIn("mutation, ownerOnly, payload", source)
         self.assertIn("EMAIL_OTP_REQUIRED", source)
 
@@ -151,10 +162,37 @@ class V2EdgeContractsTests(unittest.TestCase):
         self.assertIn('url.searchParams.get("data.id")', api)
         self.assertNotIn("saas-pix-api.onrender.com", api)
 
+    def test_payment_test_environment_is_server_selected_and_expires(self):
+        sql = (ROOT / "supabase/migrations/031_v2_payment_test_environment.sql").read_text("utf-8")
+        api = (ROOT / "supabase/functions/billing-api/index.ts").read_text("utf-8")
+        self.assertIn("billing_payment_test_companies", sql)
+        self.assertIn("expires_at > clock_timestamp()", sql)
+        self.assertIn("IMMUTABLE_PAYMENT_SNAPSHOT", sql)
+        self.assertIn("provider_environment", sql)
+        self.assertIn("provider_resource_type", sql)
+        self.assertIn("MERCADO_PAGO_TEST_ACCESS_TOKEN", api)
+        self.assertIn("MERCADO_PAGO_TEST_WEBHOOK_SECRET", api)
+        self.assertIn("PAYMENT_ENVIRONMENT_MISMATCH", api)
+        self.assertIn('first_name: "APRO"', api)
+        self.assertIn('"test_user_br@testuser.com"', api)
+        self.assertIn('identification: { type: "CPF", number: "99999999999" }', api)
+        self.assertIn('street_name: "Av. das Nações Unidas"', api)
+        self.assertIn('if (environment === "test")', api)
+        self.assertIn('? {}\n          : { processing_mode: "automatic" }', api)
+        desktop = (ROOT / "src/core/supabase_auth.py").read_text("utf-8")
+        desktop += (ROOT / "src/core/supabase_desktop.py").read_text("utf-8")
+        self.assertNotIn("MERCADO_PAGO_TEST_ACCESS_TOKEN", desktop)
+
     def test_billing_provider_failure_is_not_hidden_as_internal_error(self):
         api = (ROOT / "supabase/functions/billing-api/index.ts").read_text("utf-8")
         self.assertIn('code === "PAYMENT_PROVIDER_ERROR" ? 502', api)
         self.assertIn('status === 500 ? "INTERNAL_ERROR" : code', api)
+
+    def test_orders_external_reference_respects_provider_contract(self):
+        sql = (ROOT / "supabase/migrations/032_v2_orders_external_reference.sql").read_text("utf-8")
+        self.assertIn("replace(p_invoice_id::text, '-', '')", sql)
+        self.assertIn("encode(gen_random_bytes(12), 'hex')", sql)
+        self.assertNotIn("'invoice:'", sql)
 
     def test_old_payment_cannot_activate_new_unpaid_computers(self):
         sql = (ROOT / "supabase/migrations/019_v2_invoice_seat_consistency.sql").read_text("utf-8")

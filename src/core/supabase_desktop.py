@@ -25,10 +25,14 @@ DESKTOP_API_PATH = "/functions/v1/desktop-api"
 
 
 class DesktopBackendError(RuntimeError):
-    def __init__(self, code: str, status: int = 0):
+    def __init__(
+        self, code: str, status: int = 0,
+        details: Optional[Dict[str, Any]] = None,
+    ):
         super().__init__(code)
         self.code = code
         self.status = status
+        self.details = dict(details or {})
 
 
 class _DataBlob(ctypes.Structure):
@@ -71,25 +75,49 @@ class InstallationSession:
 
 class SupabaseDesktopClient:
     def __init__(self, hardware_id: str, timeout: int = 15):
-        self.hardware_id = str(hardware_id).strip()
+        self.detected_hardware_id = str(hardware_id).strip()
+        self.hardware_id = self.detected_hardware_id
         self.timeout = timeout
         data_dir = os.path.join(get_base_dir(), "app_data")
         os.makedirs(data_dir, exist_ok=True)
         self.session_path = os.path.join(data_dir, "supabase_installation.dat")
+        self._restore_bound_hardware_id()
 
-    def load_session(self) -> Optional[InstallationSession]:
+    def _read_session_payload(self) -> Optional[Dict[str, Any]]:
         try:
             with open(self.session_path, "rb") as file:
                 protected = file.read()
             payload = json.loads(_dpapi_transform(protected, decrypt=True).decode("utf-8"))
-            if payload.get("hardware_id") != self.hardware_id:
-                return None
-            token = str(payload.get("token") or "")
-            if len(token) < 40:
-                return None
-            return InstallationSession(self.hardware_id, token)
+            return payload if isinstance(payload, dict) else None
         except (OSError, ValueError, json.JSONDecodeError, DesktopBackendError):
             return None
+
+    def _restore_bound_hardware_id(self) -> None:
+        """Mantém o vínculo já protegido pelo DPAPI mesmo se a detecção variar.
+
+        Versões antigas podiam usar o MAC como contingência quando o Windows
+        bloqueava o WMI. Wi-Fi, VPN e drivers podiam então produzir outro MAC.
+        O token e o hardware original estão cifrados para este usuário/máquina;
+        reutilizar esse par evita transformar uma troca de adaptador em um novo
+        computador ou licença.
+        """
+        payload = self._read_session_payload()
+        if not payload:
+            return
+        bound_hardware = str(payload.get("hardware_id") or "").strip()
+        token = str(payload.get("token") or "").strip()
+        if 8 <= len(bound_hardware) <= 128 and len(token) >= 40:
+            self.hardware_id = bound_hardware
+
+    def load_session(self) -> Optional[InstallationSession]:
+        payload = self._read_session_payload()
+        if not payload:
+            return None
+        bound_hardware = str(payload.get("hardware_id") or "").strip()
+        token = str(payload.get("token") or "").strip()
+        if bound_hardware != self.hardware_id or len(token) < 40:
+            return None
+        return InstallationSession(self.hardware_id, token)
 
     def has_session(self) -> bool:
         return self.load_session() is not None
