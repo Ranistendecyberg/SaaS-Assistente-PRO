@@ -766,3 +766,13 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Commit `bbbf836` enviado à `main`; release pública `v2.1.7` criada como **Latest**. O asset remoto confirmou o mesmo SHA-256 do instalador local.
 - Supabase atualizado e confirmado com `current_version=2.1.7`, `minimum_version=0.0.0`, `update_required=false`, URL pública do instalador e SHA-256 correto. A atualização foi disponibilizada como opcional.
 - Site público atualizado para a versão Sites 8. A conferência da página publicada confirmou os três botões apontando para o instalador 2.1.7 e os textos de versão atualizados.
+
+## Release 2.1.8 e homologação OTA — 21/09/2026
+
+- Corrigidos o download HTTPS em redes corporativas, a recuperação segura do computador principal e os fluxos de homologação de PIX e boleto.
+- O modo desenvolvedor passou a distinguir ausência de autorização temporária de falha de conexão; atalho, senha, abas ocultas e envio controlado para número definido foram homologados.
+- Suíte completa aprovada com **227 testes**, testes de segurança/idempotência financeira e migrações de escala aprovados, além do `--build-smoke-test` do executável empacotado.
+- Instalador definitivo: `dist/Instalador_SaaS_Assistente_PRO_v2.1.8.exe`, 231.855.861 bytes, SHA-256 `a3dd76e5fbb9ae0f6b7a8a868f4372067328b49674bfc9f60588090b5292683f`.
+- Commit `db31199` enviado à `main`; release pública `v2.1.8` criada como **Latest** com instalador e manifesto, ambos conferidos no GitHub.
+- Supabase atualizado e confirmado pelo endpoint do Desktop com `current_version=2.1.8`, `minimum_version=0.0.0`, `update_required=false`, URL pública e SHA-256 corretos.
+- Teste físico OTA **2.1.7 → 2.1.8** aprovado: a versão antiga reconheceu a atualização, baixou e validou o instalador, encerrou, instalou silenciosamente e reabriu automaticamente já na v2.1.8.
