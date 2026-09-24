@@ -784,4 +784,6 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Tentativa indisponível libera a reserva, sem marcar envio ou consumir franquia. Diagnóstico não altera a fila.
 - Suíte completa aprovada: 239 testes. Publicação autorizada pelo proprietário; validação real com WhatsApp será feita pelos clientes.
 - Build oficial concluído após `--build-smoke-test`. Instalador: `dist/Instalador_SaaS_Assistente_PRO_v2.1.9.exe`, 231.785.454 bytes, SHA-256 `78a3b8ecb1446fa10cdb179b8347579584e96dceae095008633af1394ca1bcfb` (conferido contra o manifesto).
-- Publicação GitHub e ativação OTA em andamento; não considerar disponível até confirmação abaixo.
+- Commit `f9d89cb` enviado à `main`; release pública `v2.1.9` publicada como **Latest**, com instalador e manifesto. Asset remoto: 231.785.454 bytes e SHA-256 `78a3b8ecb1446fa10cdb179b8347579584e96dceae095008633af1394ca1bcfb`, iguais aos locais.
+- Supabase atualizado e confirmado com `current_version=2.1.9`, `minimum_version=0.0.0`, `update_required=false`, URL pública do instalador e SHA-256 correto. Atualização opcional disponível aos clientes.
+- Teste físico com o WhatsApp real e atualização em uma instalação cliente ainda pendentes de retorno dos usuários.
