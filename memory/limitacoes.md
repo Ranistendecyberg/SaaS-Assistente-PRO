@@ -34,6 +34,7 @@
 - QWebEngineView consome memória relevante quando vários navegadores ficam ativos simultaneamente.
 - A rolagem virtual dos relatórios pode ocultar registros que ainda não foram renderizados no DOM.
 - O WhatsApp Web muda frequentemente e pode exigir atualização dos seletores e rotinas de envio.
+- Na 2.1.9, a exclusão de números confirmados sem WhatsApp é local ao computador, sem sincronização. Testes automatizados aprovados; validação operacional com WhatsApp real a cargo dos clientes, conforme autorizado pelo proprietário. O mesmo número não é reavaliado automaticamente se passar a ter WhatsApp posteriormente.
 - Disparos rápidos ou repetitivos podem causar limitações ou bloqueio da conta usada.
 - Limites configuráveis não eliminam as políticas antispam do WhatsApp. Lotes são sequenciais e devem ser usados somente com autorização dos destinatários; o teste real de lote está adiado porque a base disponível contém apenas contatos reais.
 - O cálculo do link SSI depende da extração correta do modelo e do mapeamento da cilindrada.

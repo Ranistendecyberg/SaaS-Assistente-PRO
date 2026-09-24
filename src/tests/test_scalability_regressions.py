@@ -76,11 +76,13 @@ class ScalabilityRegressionTests(unittest.TestCase):
             sig_check_whatsapp_login=_Signal(),
             sig_iniciar_conversa_individual=_Signal(),
             on_whatsapp_message_sent=lambda: None,
+            on_whatsapp_phone_unavailable=lambda: None,
             on_login_status_result=lambda: None,
             on_link_individual_enviado=lambda: None,
         )
         whatsapp = SimpleNamespace(
             sig_message_sent=_Signal(),
+            sig_phone_unavailable=_Signal(),
             sig_login_status_result=_Signal(),
             sig_link_individual_enviado=_Signal(),
             send_message=lambda: None,
@@ -102,6 +104,7 @@ class ScalabilityRegressionTests(unittest.TestCase):
             extraction.sig_check_whatsapp_login,
             extraction.sig_iniciar_conversa_individual,
             whatsapp.sig_message_sent,
+            whatsapp.sig_phone_unavailable,
             whatsapp.sig_login_status_result,
             whatsapp.sig_link_individual_enviado,
         ]

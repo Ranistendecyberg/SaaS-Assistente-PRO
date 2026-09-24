@@ -21,6 +21,7 @@ class ExtractionSearchTests(unittest.TestCase):
         search = QLineEdit()
         search.setText(query)
         return SimpleNamespace(
+            db_manager=SimpleNamespace(is_whatsapp_unavailable=lambda item: False),
             list_widget=QListWidget(),
             search_box=search,
             combo_tipo=combo,

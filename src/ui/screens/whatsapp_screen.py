@@ -21,6 +21,7 @@ class PaginaSilenciosa(QWebEnginePage):
 
 class WhatsAppScreen(QWidget):
     sig_message_sent = pyqtSignal(bool) # Emite quando apertar Enviar ou der Timeout (Disparo em lote)
+    sig_phone_unavailable = pyqtSignal(str, str) # Telefone confirmado pelo WhatsApp e modo
     sig_login_status_result = pyqtSignal(bool) # Emite True se logado no WhatsApp, False se na tela de QR code
     sig_link_individual_enviado = pyqtSignal(dict) # Emite quando o link individual for enviado com sucesso
 
@@ -265,6 +266,7 @@ class WhatsAppScreen(QWidget):
         self._awaiting_confirmation = False
         self._last_probe_status = "LOADING"
         self.modo_envio = modo
+        self._send_phone = phone
         self._telemetry_contact_ref = anonymous_id(phone)
         record_event("whatsapp", "SEND_STARTED", mode=modo, contact_ref=self._telemetry_contact_ref)
         encoded_msg = urllib.parse.quote(message)
@@ -311,11 +313,6 @@ class WhatsAppScreen(QWidget):
         js_click = r"""
         (function() {
             const normalize = value => (value || "").normalize("NFKC").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
-            const composer = document.querySelector('#main footer [contenteditable="true"]');
-            if (!composer) return {status: "NOT_FOUND", reason: "COMPOSER_NOT_FOUND"};
-            if (normalize(composer.innerText) !== normalize(EXPECTED_MESSAGE)) {
-                return {status: "NOT_FOUND", reason: "MESSAGE_MISMATCH", composer_length: normalize(composer.innerText).length};
-            }
             function dispatchMouseEvents(el) {
                 var opts = {bubbles: true, cancelable: true, view: window};
                 el.dispatchEvent(new MouseEvent('mousedown', opts));
@@ -328,8 +325,10 @@ class WhatsAppScreen(QWidget):
             for (let i = 0; i < dialogs.length; i++) {
                 let dlg = dialogs[i];
                 let txt = (dlg.innerText || "").toLowerCase();
-                if (txt.includes("inválido") || txt.includes("invalido") || txt.includes("invalid") || 
-                    txt.includes("não está no whatsapp") || txt.includes("not on whatsapp")) {
+                if (txt.includes("não está no whatsapp") || txt.includes("not on whatsapp") ||
+                    txt.includes("isn't on whatsapp") || txt.includes("não tem uma conta do whatsapp") ||
+                    /n[uú]mero de telefone.{0,100}(inv[aá]lido|n[aã]o.{0,20}v[aá]lido)/.test(txt) ||
+                    /phone number.{0,100}(invalid|isn't valid|is not valid)/.test(txt)) {
                     let okBtn = dlg.querySelector('button, div[role="button"]');
                     if (okBtn) {
                         dispatchMouseEvents(okBtn);
@@ -339,6 +338,11 @@ class WhatsAppScreen(QWidget):
             }
             
             // 2. Procura botão de enviar
+            const composer = document.querySelector('#main footer [contenteditable="true"]');
+            if (!composer) return {status: "NOT_FOUND", reason: "COMPOSER_NOT_FOUND"};
+            if (normalize(composer.innerText) !== normalize(EXPECTED_MESSAGE)) {
+                return {status: "NOT_FOUND", reason: "MESSAGE_MISMATCH", composer_length: normalize(composer.innerText).length};
+            }
             let btn = document.querySelector('#main footer span[data-icon="send"]');
             if (btn) {
                 let clickable = btn.closest('button') || btn.closest('div[role="button"]');
@@ -408,6 +412,8 @@ class WhatsAppScreen(QWidget):
                 
         elif status_name == "INVALID_PHONE":
             self.click_timer.stop()
+            if self.modo_envio != "DIAGNOSTICO":
+                self.sig_phone_unavailable.emit(self._send_phone, self.modo_envio)
             print("[WPP] Detectado número inválido no WhatsApp Web. Pulando...")
             record_event("whatsapp", "INVALID_PHONE", "WARN", mode=self.modo_envio, contact_ref=getattr(self, '_telemetry_contact_ref', ''))
             if self.modo_envio == "INDIVIDUAL":

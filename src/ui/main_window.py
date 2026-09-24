@@ -187,6 +187,7 @@ class MainWindow(QMainWindow):
         extraction_screen.sig_check_whatsapp_login.connect(whatsapp_screen.check_login_status)
         extraction_screen.sig_iniciar_conversa_individual.connect(whatsapp_screen.abrir_conversa_cliente)
         whatsapp_screen.sig_message_sent.connect(extraction_screen.on_whatsapp_message_sent)
+        whatsapp_screen.sig_phone_unavailable.connect(extraction_screen.on_whatsapp_phone_unavailable)
         whatsapp_screen.sig_login_status_result.connect(extraction_screen.on_login_status_result)
         whatsapp_screen.sig_link_individual_enviado.connect(extraction_screen.on_link_individual_enviado)
         self._runtime_screens_connected = True

@@ -272,6 +272,7 @@ class MessagingTests(unittest.TestCase):
 
         def make_screen(count):
             return SimpleNamespace(
+                db_manager=SimpleNamespace(is_whatsapp_unavailable=lambda item: False),
                 clientes_nao_enviados=[],
                 list_widget=FakeList([FakeListItem(i) for i in range(count)]),
                 fila_extraida=[{'selecionado': True, 'enviado': False} for _ in range(count)],
@@ -302,6 +303,7 @@ class MessagingTests(unittest.TestCase):
         }
         screen = SimpleNamespace(
             clientes_nao_enviados=[],
+            db_manager=SimpleNamespace(is_whatsapp_unavailable=lambda item: False),
             list_widget=FakeList([FakeListItem(0), FakeListItem(1)]),
             fila_extraida=[
                 {'cliente': 'A', 'selecionado': True, 'enviado': False},

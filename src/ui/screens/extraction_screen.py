@@ -1952,6 +1952,9 @@ class ExtractionScreen(QWidget):
         # Primeiro, filtramos os itens que devem aparecer na tela mantendo o indice original
         itens_para_exibir = []
         for i, item in enumerate(self.fila_extraida):
+            if self.db_manager.is_whatsapp_unavailable(item) is True:
+                item['selecionado'] = False
+                continue
             if item.get("tipo") != tipo_filtro:
                 continue
                 
@@ -2058,6 +2061,9 @@ class ExtractionScreen(QWidget):
 
         self.fila_disparo = []
         for i, item in enumerate(self.fila_extraida):
+            if self.db_manager.is_whatsapp_unavailable(item) is True:
+                item['selecionado'] = False
+                continue
             if item.get("selecionado", False) and not item.get("enviado", False):
                 self.fila_disparo.append(i) # Armazena o index original
                 
@@ -2128,6 +2134,11 @@ class ExtractionScreen(QWidget):
         self.processar_proximo_disparo()
 
     def processar_proximo_disparo(self):
+        # Outra tentativa no mesmo lote pode ter confirmado este telefone.
+        while self.fila_disparo and self.db_manager.is_whatsapp_unavailable(
+            self.fila_extraida[self.fila_disparo[0]]
+        ) is True:
+            self.fila_extraida[self.fila_disparo.pop(0)]['selecionado'] = False
         if not self.fila_disparo:
             self.btn_dispatch.setEnabled(True)
             self.status_honda.setText("🟢 Disparo Finalizado!")
@@ -2185,7 +2196,7 @@ class ExtractionScreen(QWidget):
                 QTimer.singleShot(400, self.processar_proximo_disparo)
                 return
                 
-            if not fone.startswith('55'):
+            if len(fone) in (10, 11):
                 fone = '55' + fone
                 
             link_bruto = MedalliaBuilder.build_tsi_link(self.item_atual.get('id', ''))
@@ -2372,10 +2383,14 @@ class ExtractionScreen(QWidget):
                     QMessageBox.warning(self, "Sem Celular", f"Não foi encontrado número de celular na ficha do cliente {self.item_conversa_individual.get('cliente', '')}.")
                     return
                     
-                if not celular.startswith('55'):
+                if len(celular) in (10, 11):
                     celular = '55' + celular
                     
                 self.item_conversa_individual['telefone'] = celular
+                if self.db_manager.is_whatsapp_unavailable(self.item_conversa_individual) is True:
+                    self.atualizar_lista_ui()
+                    self.status_honda.setText("⚠️ Número já identificado como sem WhatsApp. Contato retirado da fila.")
+                    return
                 
                 link_bruto = MedalliaBuilder.build_ssi_link(self.item_conversa_individual.get('id', ''), modelo, "160")
                 link = MedalliaBuilder.encrypt_link(link_bruto)
@@ -2428,12 +2443,18 @@ class ExtractionScreen(QWidget):
                 self.on_whatsapp_message_sent(False)
                 return
                 
-            if not celular.startswith('55'):
+            if len(celular) in (10, 11):
                 celular = '55' + celular
                 
             self.item_atual['telefone'] = celular
             if 0 <= self.indice_atual_disparo < len(self.fila_extraida):
                 self.fila_extraida[self.indice_atual_disparo]['telefone'] = celular
+
+            if self.db_manager.is_whatsapp_unavailable(self.item_atual) is True:
+                self.item_atual['_whatsapp_failure_reason'] = 'Sem WhatsApp — confirmado em tentativa anterior'
+                self.on_whatsapp_message_sent(False)
+                self.atualizar_lista_ui()
+                return
             
             self.sig_dispatch_whatsapp.emit(celular, texto_final)
         else:
@@ -2473,6 +2494,11 @@ class ExtractionScreen(QWidget):
             return
             
         cli_data = self.fila_extraida[target_idx]
+        self.item_conversa_individual = cli_data
+        if self.db_manager.is_whatsapp_unavailable(cli_data) is True:
+            self.atualizar_lista_ui()
+            self.status_honda.setText("⚠️ Número já identificado como sem WhatsApp. Contato retirado da fila.")
+            return
         cliente = cli_data.get('cliente', 'Cliente')
         tipo = cli_data.get('tipo', 'TSI')
         
@@ -2490,7 +2516,7 @@ class ExtractionScreen(QWidget):
                 QMessageBox.warning(self, "Telefone Não Encontrado", f"O cliente {cliente} não possui celular válido cadastrado no myHonda.")
                 return
                 
-            if not fone.startswith('55'):
+            if len(fone) in (10, 11):
                 fone = '55' + fone
                 
             link_bruto = MedalliaBuilder.build_tsi_link(cli_data.get('id', ''))
@@ -2509,7 +2535,7 @@ class ExtractionScreen(QWidget):
                 fone = fone[1:]
                 
             if fone and len(fone) >= 10:
-                if not fone.startswith('55'):
+                if len(fone) in (10, 11):
                     fone = '55' + fone
                 modelo = cli_data.get('modelo', 'HONDA') or 'HONDA'
                 link_bruto = MedalliaBuilder.build_ssi_link(cli_data.get('id', ''), modelo, "160")
@@ -2590,6 +2616,24 @@ class ExtractionScreen(QWidget):
             
         self.atualizar_lista_ui()
 
+    def on_whatsapp_phone_unavailable(self, phone, mode):
+        if mode not in ('INDIVIDUAL', 'LOTE'):
+            return
+        item = getattr(self, 'item_conversa_individual' if mode == 'INDIVIDUAL' else 'item_atual', None)
+        if not item:
+            return
+        from src.core.database import DatabaseManager
+        if not DatabaseManager.whatsapp_phone_key(phone) or (
+            DatabaseManager.whatsapp_phone_key(phone) != DatabaseManager.whatsapp_phone_key(item.get('telefone'))
+        ):
+            return
+        item['_whatsapp_failure_reason'] = 'Sem WhatsApp — número recusado pelo WhatsApp'
+        if self.db_manager.mark_whatsapp_unavailable(phone, item):
+            self.atualizar_lista_ui()
+            self.status_honda.setText("⚠️ Sem WhatsApp: contato retirado da fila de reenvio.")
+        else:
+            self.status_honda.setText("⚠️ Número sem WhatsApp, mas não foi possível salvar a marcação. Tente atualizar a lista mais tarde.")
+
     def on_whatsapp_message_sent(self, success):
         record_event(
             "dispatch", "MESSAGE_CONFIRMED" if success else "MESSAGE_FAILED",
@@ -2643,7 +2687,7 @@ class ExtractionScreen(QWidget):
                     'cliente': cur_cli,
                     'tipo': cur_tipo,
                     'telefone': self.item_atual.get('telefone', 'S/N') or 'S/N',
-                    'motivo': 'Número Inválido / Não cadastrado no WhatsApp'
+                    'motivo': self.item_atual.pop('_whatsapp_failure_reason', 'Envio não confirmado — falha temporária ou dados indisponíveis')
                 })
             
         import random

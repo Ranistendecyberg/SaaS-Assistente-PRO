@@ -2,6 +2,7 @@ import os
 import json
 import re
 import logging
+from datetime import datetime, timezone
 from src.core.paths import get_base_dir
 
 class DatabaseManager:
@@ -190,6 +191,52 @@ class DatabaseManager:
             self.sent_path, list, [], label="histórico de pesquisas enviadas"
         )
         return set(data)
+
+    @staticmethod
+    def whatsapp_phone_key(phone):
+        """Chave de comparação; não altera o telefone original extraído."""
+        digits = re.sub(r'\D', '', str(phone or '')).lstrip('0')
+        if len(digits) in (10, 11):
+            digits = '55' + digits
+        return digits if len(digits) in (12, 13) and digits.startswith('55') else ''
+
+    def load_unavailable_whatsapp(self):
+        path = os.path.join(self.app_data_dir, 'unavailable_whatsapp.json')
+        signature = self._file_signature(path)
+        if getattr(self, '_unavailable_signature', None) != signature or not hasattr(self, '_unavailable_cache'):
+            self._unavailable_cache = self._read_json(path, dict, {}, label='números sem WhatsApp')
+            self._unavailable_signature = signature
+        return self._unavailable_cache
+
+    def mark_whatsapp_unavailable(self, phone, item):
+        key = self.whatsapp_phone_key(phone)
+        if not key:
+            return False
+        path = os.path.join(self.app_data_dir, 'unavailable_whatsapp.json')
+        try:
+            records = self._read_json(path, dict, {}, strict=True, label='números sem WhatsApp')
+            entry = records.setdefault(key, {'reason': 'WHATSAPP_PHONE_UNAVAILABLE', 'surveys': []})
+            survey = {'id': str(item.get('id') or ''), 'tipo': str(item.get('tipo') or '')}
+            if survey['id'] and survey not in entry['surveys']:
+                entry['surveys'].append(survey)
+            entry['confirmed_at'] = datetime.now(timezone.utc).isoformat()
+            self._atomic_write_json(path, records)
+            self._unavailable_cache = records
+            self._unavailable_signature = self._file_signature(path)
+            return True
+        except Exception:
+            logging.exception('Não foi possível salvar a confirmação de número sem WhatsApp.')
+            return False
+
+    def is_whatsapp_unavailable(self, item):
+        records = self.load_unavailable_whatsapp()
+        key = self.whatsapp_phone_key(item.get('telefone'))
+        if key:
+            # Um telefone diferente, vindo de nova extração, é avaliado normalmente.
+            return key in records
+        survey = {'id': str(item.get('id') or ''), 'tipo': str(item.get('tipo') or '')}
+        # SSI pode trazer o telefone apenas na ficha, ausente na lista extraída.
+        return bool(survey['id']) and any(survey in entry.get('surveys', []) for entry in records.values())
 
     def mark_survey_as_sent(self, survey_id: str):
         """Marca uma pesquisa como enviada pelo Whatsapp."""

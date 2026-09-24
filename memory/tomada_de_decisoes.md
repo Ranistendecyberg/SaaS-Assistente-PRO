@@ -121,3 +121,9 @@ Após a confirmação do usuário, o Desktop baixa o instalador por HTTPS, valid
 - O teste importa PyQt6, WebEngine, `PyQt6.sip`, bibliotecas de dados/imagem/rede e todas as telas principais sem abrir janelas, acessar licença ou alterar dados locais.
 - Dependências compiladas que o PyInstaller não detecta de forma confiável devem ser declaradas explicitamente no build; para a versão atual, `PyQt6.sip` é `hidden-import` obrigatório.
 - A cópia de PIX usa `QGuiApplication.clipboard()` para evitar uma segunda dependência de distribuição e permanecer no mesmo toolkit da interface.
+
+## 2.1.9 — integridade do telefone myHonda
+
+- Não permitir correção manual de telefone, evitando redirecionamento de pesquisas ao operador.
+- Guardar evidência explícita do WhatsApp em JSON atômico separado, por telefone normalizado e pesquisa/tipo como fallback quando a lista não traz telefone. Novo telefone extraído prevalece sobre evidência anterior da pesquisa.
+- Não confundir timeout com ausência de WhatsApp; não confirmar consumo ou envio em falhas. Distribuir como atualização opcional; teste real será feito pelos clientes por decisão do proprietário.

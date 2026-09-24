@@ -776,3 +776,12 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Commit `db31199` enviado à `main`; release pública `v2.1.8` criada como **Latest** com instalador e manifesto, ambos conferidos no GitHub.
 - Supabase atualizado e confirmado pelo endpoint do Desktop com `current_version=2.1.8`, `minimum_version=0.0.0`, `update_required=false`, URL pública e SHA-256 corretos.
 - Teste físico OTA **2.1.7 → 2.1.8** aprovado: a versão antiga reconheceu a atualização, baixou e validou o instalador, encerrou, instalou silenciosamente e reabriu automaticamente já na v2.1.8.
+
+## Release 2.1.9 — números sem WhatsApp — 23/09/2026
+
+- Confirmação explícita de número indisponível persistida localmente em `unavailable_whatsapp.json`; fila atualizada, reinício e lote em andamento respeitam essa exclusão.
+- Telefones extraídos do myHonda não são editáveis nem alterados. Um novo telefone extraído é elegível; falhas transitórias não excluem clientes.
+- Tentativa indisponível libera a reserva, sem marcar envio ou consumir franquia. Diagnóstico não altera a fila.
+- Suíte completa aprovada: 239 testes. Publicação autorizada pelo proprietário; validação real com WhatsApp será feita pelos clientes.
+- Build oficial concluído após `--build-smoke-test`. Instalador: `dist/Instalador_SaaS_Assistente_PRO_v2.1.9.exe`, 231.785.454 bytes, SHA-256 `78a3b8ecb1446fa10cdb179b8347579584e96dceae095008633af1394ca1bcfb` (conferido contra o manifesto).
+- Publicação GitHub e ativação OTA em andamento; não considerar disponível até confirmação abaixo.
