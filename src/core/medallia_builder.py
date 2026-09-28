@@ -1,55 +1,47 @@
-import requests
+"""Montagem local dos links Honda; nome da classe mantido para compatibilidade."""
+import base64
+import re
+from urllib.parse import quote, urlencode
 from src.core.salesforce_utils import salesforce_15_to_18
+
 
 class MedalliaBuilder:
     @staticmethod
-    def build_tsi_link(sf_id: str) -> str:
-        """Monta o link bruto para a pesquisa TSI."""
-        id_18 = salesforce_15_to_18(sf_id)
-        raw_link = f"https://survey3.medallia.com/?tsi2&q1={id_18}&w=2W"
-        return raw_link
+    def identifier(sf_id, prefix):
+        value = str(sf_id or '').strip()
+        if not re.fullmatch(r'[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?', value) or not value.startswith(prefix):
+            raise ValueError('Identificador da pesquisa inválido ou incompatível com o tipo.')
+        full = salesforce_15_to_18(value[:15])
+        if len(value) == 18 and value != full:
+            raise ValueError('Checksum do identificador da pesquisa inválido.')
+        return full
 
     @staticmethod
-    def build_ssi_link(sf_id: str, modelo: str, cilindrada: str) -> str:
-        """Monta o link bruto para a pesquisa SSI."""
-        id_18 = salesforce_15_to_18(sf_id)
-        # Limpar espaços do modelo
-        modelo_limpo = modelo.replace(" ", "").upper()
-        raw_link = f"https://survey3.medallia.com/?SSI-2Wv2&Q1={id_18}&Q2={modelo_limpo}&Q3={cilindrada}"
-        return raw_link
+    def _email(email):
+        value = str(email or '').strip()
+        if not re.fullmatch(r'[^@\s<>;,]+@[^@\s<>;,]+\.[^@\s<>;,]+', value):
+            raise ValueError('E-mail do cliente ausente ou inválido na ficha myHonda.')
+        return value
 
     @staticmethod
-    def encrypt_link(raw_link: str) -> str:
-        """
-        Pega o link bruto e faz um request HTTP para capturar o redirecionamento
-        do servidor da Medallia (que contém a URL Feedless criptografada).
-        """
-        print(f"\n[DEBUG] Link Bruto Gerado: {raw_link}")
-        try:
-            # Enviamos o request sem permitir redirecionamento para pegar a URL gerada
-            response = requests.get(raw_link, allow_redirects=False, timeout=10)
-            
-            # 1. Nova Estratégia da Medallia (Retorna 200 OK com o Feedless no Cookie)
-            cookies = response.headers.get('Set-Cookie', '')
-            import re
-            match = re.search(r'(feedless-[a-zA-Z0-9\-]+)', cookies)
-            if match:
-                feedless_id = match.group(1)
-                encrypted_link = f"https://survey3.medallia.com/?{feedless_id}"
-                print(f"[DEBUG] Link Criptografado via Cookie: {encrypted_link}")
-                return encrypted_link
-            
-            # 2. Antiga Estratégia da Medallia (Retornava 302 Redirect via header Location)
-            if response.status_code in (301, 302, 303, 307, 308):
-                encrypted_link = response.headers.get('Location', '')
-                if "feedless" in encrypted_link:
-                    print(f"[DEBUG] Link Criptografado via Redirect: {encrypted_link}")
-                    return encrypted_link
-            
-            # Se não encontrou de nenhum dos jeitos, devolvemos o bruto para não travar
-            print("[WARNING] Não foi possível capturar o link Feedless. Retornando bruto.")
-            return raw_link
-            
-        except Exception as e:
-            print(f"[ERROR] Falha na criptografia: {e}")
-            return raw_link
+    def displacement_from_model(modelo):
+        numbers = re.findall(r'\d+', str(modelo or ''))
+        if len(numbers) != 1 or not 2 <= len(numbers[0]) <= 4 or not 50 <= int(numbers[0]) <= 2500:
+            raise ValueError('Não foi possível identificar a cilindrada comercial no modelo myHonda.')
+        return str(int(numbers[0]))
+
+    @staticmethod
+    def _encode(value):
+        return base64.b64encode(value.encode('utf-8')).decode('ascii')
+
+    @classmethod
+    def build_tsi_link(cls, sf_id, email):
+        params = {'e': cls._encode(cls._email(email)), 'Q1': cls._encode(cls.identifier(sf_id, 'a0O'))}
+        return 'https://cloud.motos.myhonda.com.br/tsi2w?' + urlencode(params, quote_via=quote)
+
+    @classmethod
+    def build_ssi_link(cls, sf_id, modelo, *, email):
+        model = ''.join(str(modelo or '').split()).upper()
+        params = {'e': cls._encode(cls._email(email)), 'Q1': cls._encode(cls.identifier(sf_id, 'a0R')),
+                  'Q2': cls._encode(model), 'Q3': cls.displacement_from_model(model)}
+        return 'https://cloud.motos.myhonda.com.br/ssi2w?' + urlencode(params, quote_via=quote)

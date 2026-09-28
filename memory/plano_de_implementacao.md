@@ -1,5 +1,21 @@
 # Plano de Implementação — Assistente PRO Desktop
 
+## SSI/TSI — padrões validados e correção autorizada — 28/09/2026
+
+- [x] Remover as três chamadas SSI com "160" fixo e unificar geração: cilindrada comercial extraída do modelo myHonda, sem editar origem e sem fallback 160. Código 2.1.11 local.
+- [x] Identificar e homologar o formato SSI observado: `ssi2w`, e-mail/ID18/modelo sem espaços em Base64, cilindrada sem Base64. Proprietário confirmou que dois links montados (CG160 FAN e XRE 190 ADV) foram respondidos pelos clientes e contabilizados no myHonda. Isso valida esses casos, não todas as situações possíveis.
+- [x] Analisar e homologar TSI antes de implementar: exemplo recebido usa `tsi2w?e=BASE64(EMAIL)&Q1=BASE64(ID18)`, ID Salesforce com prefixo `a0O` e checksum válido. URL/ID e campo "E-mail do Cliente" foram comparados à ficha; dois novos links foram montados offline e o proprietário confirmou "Validado os links TSI". Nenhuma pesquisa foi aberta ou respondida pelo assistente.
+- [x] Decodificar offline o exemplo SSI recebido por e-mail oficial e comparar e-mail, ID Salesforce e modelo com a ficha fornecida; correspondências confirmadas. Contabilização dos dois testes SSI confirmada posteriormente pelo proprietário; contrato completo não documentado oficialmente.
+- [x] Receber autorização: "Faça o backup do sistema e depois as correções".
+- [x] Criar backup pré-correção em `backups/pre_links_honda_20260928`: fontes com alterações locais, histórico Git, dados locais privados, instalador 2.1.10 e manifesto. Bundle e hashes conferidos.
+- [x] Substituir montagem legada SSI/TSI por links Honda e consulta da ficha, sem fallback inventado de e-mail/modelo/cilindrada, em individual/lote.
+- [x] Cobrir checksum, Base64/query, dados ausentes/ambíguos, individual/lote e diagnóstico sem envio: dez testes novos, 253 testes totais aprovados.
+- [x] Adicionar geração somente para comparação no diagnóstico Ctrl+Shift+D, sem envio, acesso à pesquisa ou consumo de cota.
+- [x] Gerar instalador local 2.1.11 após 253 testes e `--build-smoke-test`; conferir tamanho/hash contra manifesto.
+- [x] Homologação pelo proprietário: links gerados, enviados aos clientes e contabilizados no myHonda. Lançamento GitHub/OTA e atualização do site autorizados.
+- [ ] Concluir publicação 2.1.11, confirmar asset/hash remoto, ativar OTA opcional e atualizar o site público.
+- Especificação consolidada e inventário do backup: `memory/links_honda_ssi_tsi_2026-09-28.md`.
+
 ## Escalabilidade — auditoria 11/09/2026
 
 - [x] Corrigir invalidação de caches e índices entre telas/instâncias.

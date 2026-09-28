@@ -175,6 +175,11 @@ class ExtractionScreen(QWidget):
         """)
         self.btn_conversar.clicked.connect(self.iniciar_conversa_individual)
 
+        self.btn_testar_link = QPushButton("Gerar link (diagnóstico)")
+        self.btn_testar_link.setVisible(False)
+        self.btn_testar_link.setToolTip("Consulta a ficha e exibe o link, sem abrir a pesquisa ou enviar mensagem.")
+        self.btn_testar_link.clicked.connect(self.gerar_link_diagnostico)
+
         self.btn_dispatch = QPushButton("▶ Enviar Pesquisa Selecionada")
         self.btn_dispatch.setFixedSize(220, 45)
         self.btn_dispatch.setEnabled(False) # Habilita só quando a lista extrair
@@ -188,6 +193,7 @@ class ExtractionScreen(QWidget):
         self.btn_dispatch.clicked.connect(self.iniciar_disparo)
         
         layout_ia.addWidget(self.btn_conversar, alignment=Qt.AlignmentFlag.AlignBottom)
+        layout_ia.addWidget(self.btn_testar_link, alignment=Qt.AlignmentFlag.AlignBottom)
         layout_ia.addWidget(self.btn_dispatch, alignment=Qt.AlignmentFlag.AlignBottom)
         layout.addWidget(painel_ia)
         
@@ -640,6 +646,7 @@ class ExtractionScreen(QWidget):
 
     def abrir_modo_desenvolvedor(self):
         if self.stack_direita.currentIndex() == 2:
+            self.btn_testar_link.setVisible(False)
             novo_idx = 1 if getattr(self, 'iniciou_carregamento', False) else 0
             self.stack_direita.setCurrentIndex(novo_idx)
             titulo = "  ✉️ Editor de Mensagem e Disparo WhatsApp" if novo_idx == 1 else "  🔐 Visão do myHonda (Faça o Login para Iniciar automação)"
@@ -668,6 +675,7 @@ class ExtractionScreen(QWidget):
         if ok:
             acesso, resultado = DeveloperAccessGuard.verify_password(senha)
             if acesso:
+                self.btn_testar_link.setVisible(True)
                 self.stack_direita.setCurrentIndex(2)
                 self.lbl_nav_titulo.setText("  🔧 [MODO DEV ATIVO] Modo: VISÍVEL (Abas de Robôs e Relatórios)")
                 QMessageBox.information(self, "Modo Desenvolvedor", "Modo desenvolvedor autorizado temporariamente para este computador.")
@@ -2050,6 +2058,9 @@ class ExtractionScreen(QWidget):
             )
 
     def iniciar_disparo(self):
+        if getattr(self, '_active_ssi_generation', None) is not None:
+            QMessageBox.warning(self, 'Consulta em andamento', 'Aguarde a consulta da ficha terminar antes de iniciar o lote.')
+            return
         # Inicializa lista de rastreio de clientes com problemas de envio
         self.clientes_nao_enviados = []
         
@@ -2172,61 +2183,7 @@ class ExtractionScreen(QWidget):
         
         self.status_honda.setText(f"🔄 Processando {cliente} ({tipo})...")
         
-        from src.core.medallia_builder import MedalliaBuilder
-        
-        texto_base = self.editor_mensagem.toPlainText()
-        texto_base = texto_base.replace("[NOME]", cliente.title())
-        
-        if tipo == 'TSI':
-            fone = re.sub(r'\D', '', self.item_atual.get('telefone', ''))
-            while fone.startswith('0'):
-                fone = fone[1:]
-                
-            if not fone or len(fone) < 10:
-                if not hasattr(self, 'clientes_nao_enviados'):
-                    self.clientes_nao_enviados = []
-                self.clientes_nao_enviados.append({
-                    'cliente': cliente,
-                    'tipo': 'TSI',
-                    'telefone': self.item_atual.get('telefone', 'S/N') or 'S/N',
-                    'motivo': 'Sem celular cadastrado no myHonda'
-                })
-                lm.liberar_reserva_envio(self.reserva_envio_atual)
-                self.reserva_envio_atual = ""
-                QTimer.singleShot(400, self.processar_proximo_disparo)
-                return
-                
-            if len(fone) in (10, 11):
-                fone = '55' + fone
-                
-            link_bruto = MedalliaBuilder.build_tsi_link(self.item_atual.get('id', ''))
-            link = MedalliaBuilder.encrypt_link(link_bruto)
-            texto_final = texto_base.replace("[LINK]", link)
-            self.sig_dispatch_whatsapp.emit(fone, texto_final)
-            
-        elif tipo == 'SSI':
-            url_ficha = self.item_atual.get('url_ficha')
-            if url_ficha:
-                self._begin_ssi_lookup()
-                url_completa = "https://myhonda.my.site.com" + url_ficha if url_ficha.startswith("/") else url_ficha
-                record_event(
-                    "ssi_dispatch", "CONTACT_PAGE_OPEN_STARTED",
-                    survey_ref=anonymous_id(self.item_atual.get('id', '')),
-                    target_domain=QUrl(url_completa).host(),
-                )
-                self.nav_ssi_oculto.setUrl(QUrl(url_completa))
-                self.tentativas = 0
-                self.timer_ssi_ficha.start(2000)
-            else:
-                if not hasattr(self, 'clientes_nao_enviados'):
-                    self.clientes_nao_enviados = []
-                self.clientes_nao_enviados.append({
-                    'cliente': cliente,
-                    'tipo': 'SSI',
-                    'telefone': 'S/N',
-                    'motivo': 'Ficha sem link de contato'
-                })
-                self.on_whatsapp_message_sent(False)
+        self._open_survey_contact(self.item_atual, individual=False)
 
     def checar_ssi_ficha(self):
         generation = getattr(self, '_active_ssi_generation', None)
@@ -2254,7 +2211,7 @@ class ExtractionScreen(QWidget):
                 self.clientes_nao_enviados = []
             self.clientes_nao_enviados.append({
                 'cliente': self.item_atual.get('cliente', 'Desconhecido'),
-                'tipo': 'SSI',
+                'tipo': self.item_atual.get('tipo', 'SSI'),
                 'telefone': 'S/N',
                 'motivo': 'Tempo esgotado ao abrir ficha no myHonda'
             })
@@ -2272,7 +2229,7 @@ class ExtractionScreen(QWidget):
         js_check = """
         (function(){ 
             return document.querySelectorAll('td.labelCol, th.labelCol, td[class*="labelCol"]').length > 0 || 
-                   (document.body && (document.body.innerText.includes('Dados para Contato') || document.body.innerText.includes('Celular'))); 
+                   (document.body && (document.body.innerText.includes('Dados para Contato') || document.body.innerText.includes('TSI - Informações do Cliente')));
         })();
         """
         self.nav_ssi_oculto.page().runJavaScript(
@@ -2297,62 +2254,53 @@ class ExtractionScreen(QWidget):
                 elapsed_ms=self.tentativas * 2000,
             )
             self.timer_ssi_ficha.stop()
-            js_extract = """
-            (function() {
-                let extracted = {celular: '', modelo: ''};
-                
-                let allCells = document.querySelectorAll('td, th');
-                for (let i = 0; i < allCells.length; i++) {
-                    let cell = allCells[i];
-                    let text = (cell.innerText || '').trim().toLowerCase();
-                    
-                    // Modelo do Veículo (ex: POP110I ES, BROS 160, etc.)
-                    if (text === 'modelo' || text === 'modelo:' || text.startsWith('modelo ')) {
-                        let next = cell.nextElementSibling;
-                        if (next) {
-                            let val = (next.innerText || '').trim();
-                            if (val) extracted.modelo = val;
-                        }
-                    } else if (!extracted.modelo && (text === 'produto / veículo' || text === 'produto' || text.startsWith('produto:'))) {
-                        let next = cell.nextElementSibling;
-                        if (next) {
-                            let val = (next.innerText || '').trim();
-                            if (val) extracted.modelo = val;
-                        }
-                    }
-                    
-                    // Celular / Telefone
-                    if (text.includes('celular') || text.includes('telefone') || text.includes('fone') || text.includes('contato')) {
-                        let next = cell.nextElementSibling;
-                        if (next) {
-                            let val = (next.innerText || '').trim();
-                            let nums = val.replace(/\\D/g, '');
-                            if (nums.length >= 10) {
-                                if (!extracted.celular || nums.length === 11 || nums.length === 13) {
-                                    extracted.celular = val;
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // Fallback: varre todo o texto da página se não achou celular
-                if (!extracted.celular) {
-                    let pageText = document.body ? document.body.innerText : '';
-                    let fones = pageText.match(/(?:\\+?55\\s*)?\\(?\\d{2}\\)?\\s*(?:9\\s*)?\\d{4}[-\\s]?\\d{4}/g);
-                    if (fones && fones.length > 0) {
-                        extracted.celular = fones[0].trim();
-                    }
-                }
-                
-                return extracted;
-            })();
-            """
+            from src.core.honda_contact_extractor import CONTACT_EXTRACTOR_JS
+            js_extract = CONTACT_EXTRACTOR_JS
             self.nav_ssi_oculto.page().runJavaScript(
                 js_extract,
                 lambda result, token=generation:
                     self.on_ssi_ficha_extraida(result, token),
             )
+
+    def _survey_lookup_failed(self, reason, individual):
+        self._diagnostic_lookup = False
+        self.status_honda.setText("⚠️ " + reason)
+        self.modo_conversa_individual = False
+        if individual:
+            QMessageBox.warning(self, "Pesquisa não preparada", reason)
+        else:
+            self.item_atual['_whatsapp_failure_reason'] = reason
+            self.on_whatsapp_message_sent(False)
+
+    def _open_survey_contact(self, item, individual=False, diagnostic=False):
+        from urllib.parse import urlsplit
+        from src.core.medallia_builder import MedalliaBuilder
+        self._invalidate_ssi_lookup()
+        self._diagnostic_lookup = diagnostic
+        self.modo_conversa_individual = individual
+        try:
+            prefix = {'SSI': 'a0R', 'TSI': 'a0O'}.get(item.get('tipo'))
+            if not prefix:
+                raise ValueError('Tipo de pesquisa inválido.')
+            expected = MedalliaBuilder.identifier(item.get('id'), prefix)
+            url = str(item.get('url_ficha') or '')
+            if url.startswith('/'):
+                url = 'https://myhonda.my.site.com' + url
+            parts = urlsplit(url)
+            record = parts.path.rstrip('/').split('/')[-1]
+            if (parts.scheme != 'https' or parts.netloc != 'myhonda.my.site.com'
+                    or MedalliaBuilder.identifier(record, prefix) != expected):
+                raise ValueError('Link da ficha ausente ou incompatível com a pesquisa selecionada.')
+        except ValueError as error:
+            self._survey_lookup_failed(str(error), individual)
+            return
+        if individual:
+            self._pending_conversation_generation = self._conversation_generation
+        self.status_honda.setText(f"🔍 Consultando ficha {item['tipo']} no myHonda...")
+        self._begin_ssi_lookup()
+        self.nav_ssi_oculto.setUrl(QUrl(url))
+        self.tentativas = 0
+        self.timer_ssi_ficha.start(2000)
 
     def on_ssi_ficha_extraida(self, result, ssi_generation=None):
         if ssi_generation is not None and (
@@ -2360,116 +2308,80 @@ class ExtractionScreen(QWidget):
             or ssi_generation != getattr(self, '_ssi_extracting_generation', None)
         ):
             return
-        if ssi_generation is not None:
-            self._active_ssi_generation = None
-            self._ssi_extracting_generation = None
-        if getattr(self, 'modo_conversa_individual', False):
-            self.modo_conversa_individual = False
-            if result:
-                from src.core.medallia_builder import MedalliaBuilder
-                modelo = result.get('modelo', 'HONDA') or 'HONDA'
-                self.item_conversa_individual['modelo'] = modelo
-                
-                fone_cru = result.get('celular', '')
-                if not fone_cru or fone_cru == 'S/N':
-                    fone_cru = self.item_conversa_individual.get('telefone', '')
-                    
-                celular = re.sub(r'\D', '', fone_cru)
-                while celular.startswith('0'):
-                    celular = celular[1:]
-                    
-                if not celular or len(celular) < 10:
-                    self.status_honda.setText("⚠️ Celular não encontrado na ficha.")
-                    QMessageBox.warning(self, "Sem Celular", f"Não foi encontrado número de celular na ficha do cliente {self.item_conversa_individual.get('cliente', '')}.")
-                    return
-                    
-                if len(celular) in (10, 11):
-                    celular = '55' + celular
-                    
-                self.item_conversa_individual['telefone'] = celular
-                if self.db_manager.is_whatsapp_unavailable(self.item_conversa_individual) is True:
-                    self.atualizar_lista_ui()
-                    self.status_honda.setText("⚠️ Número já identificado como sem WhatsApp. Contato retirado da fila.")
-                    return
-                
-                link_bruto = MedalliaBuilder.build_ssi_link(self.item_conversa_individual.get('id', ''), modelo, "160")
-                link = MedalliaBuilder.encrypt_link(link_bruto)
-                texto_base = self.editor_mensagem.toPlainText()
-                texto_base = texto_base.replace("[NOME]", self.item_conversa_individual.get('cliente', '').title())
-                texto_final = texto_base.replace("[LINK]", link)
-                
-                self._mostrar_conversa_iniciada(
-                    self.item_conversa_individual.get('cliente', '')
-                )
-                self.sig_iniciar_conversa_individual.emit(celular, self.item_conversa_individual.get('cliente', ''), link, texto_final, self.item_conversa_individual)
-                self.sig_request_tab_change.emit(1)
+        self._active_ssi_generation = None
+        self._ssi_extracting_generation = None
+        individual = getattr(self, 'modo_conversa_individual', False)
+        item = self.item_conversa_individual if individual else self.item_atual
+        from src.core.medallia_builder import MedalliaBuilder
+        try:
+            if not isinstance(result, dict):
+                raise ValueError('Não foi possível extrair os dados da ficha myHonda.')
+            if result.get('error'):
+                raise ValueError(result['error'])
+            prefix = {'SSI': 'a0R', 'TSI': 'a0O'}.get(item.get('tipo'))
+            if not prefix:
+                raise ValueError('Tipo de pesquisa inválido.')
+            if (MedalliaBuilder.identifier(result.get('record_id'), prefix)
+                    != MedalliaBuilder.identifier(item.get('id'), prefix)):
+                raise ValueError('A ficha carregada não corresponde à pesquisa selecionada.')
+            email = result.get('email', '')
+            if item['tipo'] == 'SSI':
+                link = MedalliaBuilder.build_ssi_link(item.get('id'), result.get('modelo'), email=email)
             else:
-                self.status_honda.setText("⚠️ Falha ao abrir ficha.")
-                QMessageBox.warning(self, "Erro", "Não foi possível carregar a ficha do cliente no myHonda.")
-            return
-
-        if result:
-            from src.core.medallia_builder import MedalliaBuilder
-            modelo = result.get('modelo', 'HONDA') or 'HONDA'
-            
-            link_bruto = MedalliaBuilder.build_ssi_link(self.item_atual.get('id', ''), modelo, "160")
-            link = MedalliaBuilder.encrypt_link(link_bruto)
-            texto_base = self.editor_mensagem.toPlainText()
-            texto_base = texto_base.replace("[NOME]", self.item_atual.get('cliente', '').title())
-            texto_final = texto_base.replace("[LINK]", link)
-            
-            fone_cru = result.get('celular', '')
-            if not fone_cru or fone_cru == 'S/N': 
-                fone_cru = self.item_atual.get('telefone', '')
-                
-            celular = re.sub(r'\D', '', fone_cru)
-            while celular.startswith('0'):
-                celular = celular[1:]
-                
-            if not celular or len(celular) < 10:
-                record_event(
-                    "ssi_dispatch", "CONTACT_PHONE_NOT_FOUND", "WARN",
-                    survey_ref=anonymous_id(self.item_atual.get('id', '')),
-                    model_found=bool(modelo and modelo != 'HONDA'),
-                )
-                if not hasattr(self, 'clientes_nao_enviados'):
-                    self.clientes_nao_enviados = []
-                self.clientes_nao_enviados.append({
-                    'cliente': self.item_atual.get('cliente', 'Desconhecido'),
-                    'tipo': 'SSI',
-                    'telefone': fone_cru or 'S/N',
-                    'motivo': 'Sem celular na Ficha do myHonda'
-                })
-                self.on_whatsapp_message_sent(False)
+                link = MedalliaBuilder.build_tsi_link(item.get('id'), email)
+            if getattr(self, '_diagnostic_lookup', False):
+                self._diagnostic_lookup = False
+                self.modo_conversa_individual = False
+                authorized, _ = DeveloperAccessGuard.authorization_status(force=True)
+                if not authorized:
+                    self._survey_lookup_failed('Autorização de diagnóstico expirada.', True)
+                    return
+                dialog = QMessageBox(self)
+                dialog.setWindowTitle('Link Honda — diagnóstico (sem envio)')
+                dialog.setTextFormat(Qt.TextFormat.PlainText)
+                dialog.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+                dialog.setText(link)
+                dialog.setInformativeText('Copie para comparar. Nenhuma pesquisa foi aberta, nenhuma mensagem foi enviada e nenhuma cota foi consumida.')
+                self.status_honda.setText('✅ Link gerado para diagnóstico, sem envio.')
+                dialog.exec()
                 return
-                
+            # A fila também é origem myHonda; não usar números arbitrários do texto da página.
+            phone = item.get('telefone', '')
+            if not phone or phone == 'S/N':
+                phone = result.get('celular', '')
+            celular = re.sub(r'\D', '', str(phone)).lstrip('0')
             if len(celular) in (10, 11):
                 celular = '55' + celular
-                
-            self.item_atual['telefone'] = celular
-            if 0 <= self.indice_atual_disparo < len(self.fila_extraida):
-                self.fila_extraida[self.indice_atual_disparo]['telefone'] = celular
-
-            if self.db_manager.is_whatsapp_unavailable(self.item_atual) is True:
-                self.item_atual['_whatsapp_failure_reason'] = 'Sem WhatsApp — confirmado em tentativa anterior'
-                self.on_whatsapp_message_sent(False)
-                self.atualizar_lista_ui()
-                return
-            
-            self.sig_dispatch_whatsapp.emit(celular, texto_final)
+            if len(celular) not in (12, 13) or not celular.startswith('55'):
+                raise ValueError('Sem celular válido cadastrado no myHonda.')
+        except ValueError as error:
+            self._survey_lookup_failed(str(error), individual)
+            return
+        item['telefone'] = celular
+        if self.db_manager.is_whatsapp_unavailable(item) is True:
+            self._survey_lookup_failed('Sem WhatsApp — confirmado em tentativa anterior', individual)
+            self.atualizar_lista_ui()
+            return
+        # Dados de origem permanecem não editáveis; não registrar URL/e-mail em telemetria.
+        item['email'] = email
+        if item['tipo'] == 'SSI':
+            item['modelo'] = result['modelo']
+        texto_final = (self.editor_mensagem.toPlainText()
+                       .replace('[NOME]', item.get('cliente', '').title()).replace('[LINK]', link))
+        self.modo_conversa_individual = False
+        if individual:
+            self._mostrar_conversa_iniciada(item.get('cliente', ''))
+            self.sig_iniciar_conversa_individual.emit(
+                celular, item.get('cliente', ''), link, texto_final, item)
+            self.sig_request_tab_change.emit(1)
         else:
-            if not hasattr(self, 'clientes_nao_enviados'):
-                self.clientes_nao_enviados = []
-            self.clientes_nao_enviados.append({
-                'cliente': self.item_atual.get('cliente', 'Desconhecido'),
-                'tipo': 'SSI',
-                'telefone': 'S/N',
-                'motivo': 'Não foi possível extrair dados da Ficha'
-            })
-            self.on_whatsapp_message_sent(False)
+            self.sig_dispatch_whatsapp.emit(celular, texto_final)
 
     def iniciar_conversa_individual(self):
         """Abre o chat no WhatsApp Web para conversar individualmente com o cliente selecionado."""
+        if getattr(self, 'reserva_envio_atual', '') or getattr(self, 'fila_disparo', []):
+            QMessageBox.warning(self, 'Lote em andamento', 'Aguarde o lote terminar antes de iniciar outra consulta.')
+            return
         # Uma busca SSI anterior não pode substituir o cliente escolhido agora.
         self._invalidate_ssi_lookup()
         self._conversation_generation = getattr(self, '_conversation_generation', 0) + 1
@@ -2499,70 +2411,24 @@ class ExtractionScreen(QWidget):
             self.atualizar_lista_ui()
             self.status_honda.setText("⚠️ Número já identificado como sem WhatsApp. Contato retirado da fila.")
             return
-        cliente = cli_data.get('cliente', 'Cliente')
-        tipo = cli_data.get('tipo', 'TSI')
-        
-        from src.core.medallia_builder import MedalliaBuilder
-        
-        texto_base = self.editor_mensagem.toPlainText()
-        texto_base = texto_base.replace("[NOME]", cliente.title())
-        
-        if tipo == 'TSI':
-            fone = re.sub(r'\D', '', cli_data.get('telefone', ''))
-            while fone.startswith('0'):
-                fone = fone[1:]
-                
-            if not fone or len(fone) < 10:
-                QMessageBox.warning(self, "Telefone Não Encontrado", f"O cliente {cliente} não possui celular válido cadastrado no myHonda.")
-                return
-                
-            if len(fone) in (10, 11):
-                fone = '55' + fone
-                
-            link_bruto = MedalliaBuilder.build_tsi_link(cli_data.get('id', ''))
-            link = MedalliaBuilder.encrypt_link(link_bruto)
-            texto_final = texto_base.replace("[LINK]", link)
-            
-            # Abre a conversa no WhatsApp Web sem enviar a mensagem
-            self._mostrar_conversa_iniciada(cliente)
-            self.sig_iniciar_conversa_individual.emit(fone, cliente, link, texto_final, cli_data)
-            self.sig_request_tab_change.emit(1) # Pula para a aba do WhatsApp
-            
-        elif tipo == 'SSI':
-            fone_cru = cli_data.get('telefone', '')
-            fone = re.sub(r'\D', '', fone_cru)
-            while fone.startswith('0'):
-                fone = fone[1:]
-                
-            if fone and len(fone) >= 10:
-                if len(fone) in (10, 11):
-                    fone = '55' + fone
-                modelo = cli_data.get('modelo', 'HONDA') or 'HONDA'
-                link_bruto = MedalliaBuilder.build_ssi_link(cli_data.get('id', ''), modelo, "160")
-                link = MedalliaBuilder.encrypt_link(link_bruto)
-                texto_final = texto_base.replace("[LINK]", link)
-                
-                self._mostrar_conversa_iniciada(cliente)
-                self.sig_iniciar_conversa_individual.emit(fone, cliente, link, texto_final, cli_data)
-                self.sig_request_tab_change.emit(1)
-            else:
-                # Precisa buscar na ficha do SSI primeiro
-                url_ficha = cli_data.get('url_ficha')
-                if not url_ficha:
-                    QMessageBox.warning(self, "Ficha Não Disponível", f"Não há link de ficha para o cliente {cliente}.")
-                    return
-                    
-                self.modo_conversa_individual = True
-                self._pending_conversation_generation = self._conversation_generation
-                self.item_conversa_individual = cli_data
-                self.status_honda.setText(f"🔍 Abrindo ficha de {cliente} no myHonda para obter contato...")
-                self.status_honda.setStyleSheet("background-color: white; color: #2563EB; padding: 8px 15px; border-radius: 15px; font-weight: bold; font-size: 12px; border: 1px solid #E2E8F0;")
-                
-                url_completa = "https://myhonda.my.site.com" + url_ficha if url_ficha.startswith("/") else url_ficha
-                self._begin_ssi_lookup()
-                self.nav_ssi_oculto.setUrl(QUrl(url_completa))
-                self.tentativas = 0
-                self.timer_ssi_ficha.start(2000)
+        self._open_survey_contact(cli_data, individual=True)
+
+    def gerar_link_diagnostico(self):
+        authorized, _ = DeveloperAccessGuard.authorization_status(force=True)
+        if not authorized or not self.btn_testar_link.isVisible():
+            QMessageBox.warning(self, 'Acesso protegido', 'Ative o diagnóstico autorizado com Ctrl+Shift+D.')
+            return
+        if getattr(self, 'reserva_envio_atual', '') or getattr(self, 'fila_disparo', []):
+            QMessageBox.warning(self, 'Lote em andamento', 'Aguarde o lote terminar antes do diagnóstico.')
+            return
+        selected = self.list_widget.currentItem()
+        index = selected.data(Qt.ItemDataRole.UserRole) if selected else None
+        if not isinstance(index, int) or not 0 <= index < len(self.fila_extraida):
+            QMessageBox.warning(self, 'Selecione um cliente', 'Destaque uma linha da fila para gerar o link.')
+            return
+        self._conversation_generation = getattr(self, '_conversation_generation', 0) + 1
+        self.item_conversa_individual = self.fila_extraida[index]
+        self._open_survey_contact(self.item_conversa_individual, individual=True, diagnostic=True)
 
     def _begin_ssi_lookup(self):
         self._ssi_generation = getattr(self, '_ssi_generation', 0) + 1

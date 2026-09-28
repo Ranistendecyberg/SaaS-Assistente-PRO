@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QTextEdit, QCheckBox, QFrame)
 from PyQt6.QtCore import Qt
 from src.core.paths import get_base_dir
+from src.version import __version__
 
 class TermsDialog(QDialog):
     """
@@ -19,7 +20,7 @@ class TermsDialog(QDialog):
         self.apenas_leitura = apenas_leitura
         self.termo_aceito = False
         
-        self.setWindowTitle("Termos de Uso e Licença - SaaS Assistente PRO")
+        self.setWindowTitle(f"Termos de Uso e Licença — SaaS Assistente PRO V{__version__}")
         self.setFixedSize(700, 620)
         self.setModal(True)
         

@@ -40,6 +40,7 @@ __pycache__/
 *.spec.bak
 
 # Temporários do sistema e editor
+/backups/
 Thumbs.db
 .DS_Store
 *.tmp

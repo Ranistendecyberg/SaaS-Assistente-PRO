@@ -6,6 +6,7 @@ from src.core.license_manager import LicenseManager
 import qrcode
 from PIL import Image, ImageQt
 from decimal import Decimal, InvalidOperation
+from src.version import __version__
 
 
 def _confirmed_pix_amount(value):
@@ -40,14 +41,15 @@ class WorkerThread(QThread):
 class LicenseScreen(QDialog):
     """
     Tela de bloqueio para licenciamento. 
-    Se a licença for válida/trial, fecha silenciosamente.
+    Se a licença for válida/trial, confirma o acesso nesta mesma tela.
     Se estiver vencida, obriga o usuário a pagar o PIX ou inserir chave.
     """
     
-    def __init__(self, parent=None, modo=None):
+    def __init__(self, parent=None, modo=None, initial_status=None):
         super().__init__(parent)
-        self.setWindowTitle("Ativação do Sistema - SaaS Assistente PRO")
-        self.setFixedSize(500, 600)
+        self.setWindowTitle(f"Ativação do Sistema — SaaS Assistente PRO V{__version__}")
+        self.setFixedSize(560, 600 if modo in {"pix", "chave"} else 500)
+        self.setStyleSheet("QDialog { background: #FFFFFF; }")
         
         self.manager = LicenseManager()
         self.payment_id = None
@@ -66,12 +68,14 @@ class LicenseScreen(QDialog):
         elif modo == "chave":
             self.stack.setCurrentIndex(3)
             self.buscar_status_silencioso()
+        elif initial_status is not None:
+            QTimer.singleShot(0, lambda: self._apply_initial_status(initial_status))
         else:
             self.verificar_status_inicial()
 
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(30, 30, 30, 30)
+        main_layout.setContentsMargins(36, 28, 36, 24)
         main_layout.setSpacing(20)
         
         # Título
@@ -91,6 +95,33 @@ class LicenseScreen(QDialog):
         
         # Pagina 0: Carregando
         page_loading = QWidget()
+        loading_layout = QVBoxLayout(page_loading)
+        loading_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        loading_layout.setSpacing(18)
+        logo = QLabel()
+        logo_pixmap = QGuiApplication.instance().windowIcon().pixmap(48, 48)
+        logo.setPixmap(logo_pixmap.scaled(96, 96, Qt.AspectRatioMode.KeepAspectRatio,
+                                          Qt.TransformationMode.SmoothTransformation))
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        loading_layout.addWidget(logo)
+        self.lbl_loading_title = QLabel("Preparando seu acesso")
+        self.lbl_loading_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_loading_title.setStyleSheet("font-size: 20px; font-weight: bold; color: #1E293B;")
+        loading_layout.addWidget(self.lbl_loading_title)
+        self.lbl_loading_description = QLabel("Aguarde enquanto confirmamos sua licença com segurança.")
+        self.lbl_loading_description.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_loading_description.setStyleSheet("font-size: 13px; color: #64748B;")
+        loading_layout.addWidget(self.lbl_loading_description)
+        self.btn_continue = QPushButton("OK")
+        self.btn_continue.setFixedWidth(180)
+        self.btn_continue.setStyleSheet("background: #2563EB; color: white; padding: 12px; border-radius: 8px; font-weight: bold;")
+        self.btn_continue.clicked.connect(self.accept)
+        self.btn_continue.hide()
+        loading_layout.addWidget(self.btn_continue, alignment=Qt.AlignmentFlag.AlignCenter)
+        version = QLabel(f"Versão {__version__}")
+        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version.setStyleSheet("font-size: 12px; color: #94A3B8;")
+        loading_layout.addWidget(version)
         self.stack.addWidget(page_loading)
         
         # Pagina 1: Opções de Pagamento (Bloqueado)
@@ -205,30 +236,31 @@ class LicenseScreen(QDialog):
         def task():
             return self.manager.validar_licenca()
             
-        def on_done(dados):
-            status = dados.get("status")
+        self.execute_async(task, self._apply_initial_status)
+
+    def _apply_initial_status(self, dados):
+        status = dados.get("status")
+        if status in {"trial", "ativa"}:
             dias = dados.get("dias_restantes", 0)
-            
-            if status == "trial" or status == "ativa":
-                msg_dias = f"Dias restantes: {dias}" if dias > 1 else "Último dia de validade (expira hoje às 22h)."
-                QMessageBox.information(self, "Licença Válida", f"Acesso liberado!\n{msg_dias}")
-                self.accept() 
-            else:
-                self.btn_pix.setText("Consultar valor e gerar PIX")
-                
-                aviso_reajuste = dados.get("aviso_reajuste", "").strip()
-                if aviso_reajuste:
-                    self.lbl_aviso_reajuste.setText(f"📢 {aviso_reajuste}")
-                    self.lbl_aviso_reajuste.show()
-                else:
-                    self.lbl_aviso_reajuste.hide()
-                    
-                self.lbl_block.setText("Sua licença expirou.")
-                self.lbl_block.setStyleSheet("font-size: 18px; font-weight: bold; color: #EF4444;")
-                self.lbl_subtitle.setText(f"Máquina: {self.manager.get_hardware_id()}")
-                self.stack.setCurrentIndex(1)
-                
-        self.execute_async(task, on_done)
+            msg_dias = f"Dias restantes: {dias}" if dias > 1 else "Último dia de validade (expira hoje às 22h)."
+            self.lbl_subtitle.setText("Licença válida")
+            self.lbl_loading_title.setText("Acesso liberado!")
+            self.lbl_loading_description.setText(msg_dias)
+            self.btn_continue.show()
+            self.btn_continue.setFocus()
+            return
+        self.setFixedSize(560, 600)
+        self.btn_pix.setText("Consultar valor e gerar PIX")
+        aviso_reajuste = str(dados.get("aviso_reajuste") or "").strip()
+        if aviso_reajuste:
+            self.lbl_aviso_reajuste.setText(f"📢 {aviso_reajuste}")
+            self.lbl_aviso_reajuste.show()
+        else:
+            self.lbl_aviso_reajuste.hide()
+        self.lbl_block.setText("Sua licença expirou.")
+        self.lbl_block.setStyleSheet("font-size: 18px; font-weight: bold; color: #EF4444;")
+        self.lbl_subtitle.setText(f"Máquina: {self.manager.get_hardware_id()}")
+        self.stack.setCurrentIndex(1)
         
     def buscar_status_silencioso(self, auto_gerar_pix=False):
         def task():

@@ -127,3 +127,17 @@ Após a confirmação do usuário, o Desktop baixa o instalador por HTTPS, valid
 - Não permitir correção manual de telefone, evitando redirecionamento de pesquisas ao operador.
 - Guardar evidência explícita do WhatsApp em JSON atômico separado, por telefone normalizado e pesquisa/tipo como fallback quando a lista não traz telefone. Novo telefone extraído prevalece sobre evidência anterior da pesquisa.
 - Não confundir timeout com ausência de WhatsApp; não confirmar consumo ou envio em falhas. Distribuir como atualização opcional; teste real será feito pelos clientes por decisão do proprietário.
+
+## Abertura do Desktop — 25/09/2026
+
+- Na 2.1.10, unificar a ativação: a própria tela apresenta "Acesso liberado!", dias restantes e botão OK após validar a licença; ao clicar, a mesma janela fecha e abre a principal. Não criar um QMessageBox separado. A primeira consulta já realizada é reutilizada para evitar chamada duplicada.
+- Modernizar apenas a página de fundo enquanto verifica a licença. Preservar o primeiro acesso anterior; mostrar a versão instalada desde o título da primeira janela visível, inclusive em termos, ativação e erros de conexão/vínculo.
+
+## Montagem SSI/TSI — 28/09/2026
+
+- Adotar os formatos Honda validados pelo proprietário, em substituição ao gerador legado Medallia/feedless. SSI usa e-mail, ID18, modelo e cilindrada; TSI usa somente e-mail e ID18. Base64 é codificação, não criptografia.
+- Cilindrada SSI deve refletir a numeração comercial do modelo cadastrado (125, 160, 110, 190 etc.), nunca um valor fixo ou fallback 160. Extrair da ficha sem permitir que o operador substitua dados de cliente.
+- Não gerar/enviar pesquisa com dados obrigatórios ausentes ou ambíguos; preservar o vínculo entre ficha e registro selecionado. Falha de preparação não deve marcar envio nem consumir cota.
+- Usuário autorizou backup antes das correções. Backup local concluído; implementação e 253 testes aprovados para a 2.1.11 local. Homologação real pelo proprietário continua pendente. Não inferir autorização para publicação remota.
+- Para o teste solicitado com Ctrl+Shift+D, disponibilizar geração somente de leitura do link selecionado: mesma consulta e builder do fluxo operacional, sem WhatsApp, pesquisa aberta ou cota consumida, com autorização temporária reconferida ao concluir.
+- Especificação e evidências resumidas em `links_honda_ssi_tsi_2026-09-28.md`; testes futuros devem usar dados fictícios, sem abrir pesquisas ou enviar mensagens a clientes reais.

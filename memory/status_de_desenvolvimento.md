@@ -787,3 +787,36 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Commit `f9d89cb` enviado à `main`; release pública `v2.1.9` publicada como **Latest**, com instalador e manifesto. Asset remoto: 231.785.454 bytes e SHA-256 `78a3b8ecb1446fa10cdb179b8347579584e96dceae095008633af1394ca1bcfb`, iguais aos locais.
 - Supabase atualizado e confirmado com `current_version=2.1.9`, `minimum_version=0.0.0`, `update_required=false`, URL pública do instalador e SHA-256 correto. Atualização opcional disponível aos clientes.
 - Teste físico com o WhatsApp real e atualização em uma instalação cliente ainda pendentes de retorno dos usuários.
+
+## Homologação local da abertura 2.1.10 — 25/09/2026
+
+- Por decisão do proprietário, a 2.1.10 terá uma única tela de ativação: ao validar a licença, a própria janela mostra "Acesso liberado!", dias restantes e OK; após o clique, abre a janela principal.
+- Só a página de fundo da verificação de licença foi redesenhada. O fluxo de primeiro acesso/cadastro voltou ao original. A versão consta nos títulos da primeira janela e nas mensagens de erro de conexão/vínculo/manutenção.
+- A primeira resposta do servidor é passada à tela de ativação, evitando uma segunda consulta. Os fluxos de licença expirada, PIX e chave permanecem na mesma janela.
+- Alteração de tela única aprovada em 243 testes. Executável empacotado em pasta isolada e aprovado no `--build-smoke-test`. Instalador local recompilado: `dist/Instalador_SaaS_Assistente_PRO_v2.1.10.exe`, 231.840.117 bytes, SHA-256 `e9909f8cfb65ad40591796f229bb6bcf78f9d9e4e6f4b70a7a20d79accddf116`, conferido com o manifesto. Após o usuário mostrar a tela antiga, foi constatado que o executável avulso em `dist/` ainda era o build anterior; ele foi sincronizado com o executável correto e os SHA-256 foram comparados. Instalador e executável avulso agora contêm o mesmo build.
+- Não houve publicação no GitHub, Supabase ou site; a versão pública continua 2.1.9. Validação visual final do instalador em Windows está pendente.
+- Acabamento visual solicitado: reduzir apenas a altura da janela de confirmação válida (de 600 para 500 px) e ampliar suavemente o logotipo original para 96 px; telas de licença vencida, PIX e chave mantêm 600 px.
+- Refinamento recompilado no instalador local da 2.1.10 após 243 testes e `--build-smoke-test`: `dist/Instalador_SaaS_Assistente_PRO_v2.1.10.exe`, 231.819.902 bytes, SHA-256 `311c036c8db274743c5608030ed4864b849c68abc0676a3f45358619c06ed1ee`, igual ao manifesto. Não publicado.
+
+## SSI/TSI e backup pré-correção — 28/09/2026
+
+- Padrão SSI conferido por comparação com e-mail oficial e ficha myHonda; proprietário confirmou duas pesquisas respondidas e contabilizadas (CG160 FAN e XRE 190 ADV).
+- Padrão TSI conferido com URL da ficha e campo "E-mail do Cliente"; proprietário confirmou a validação dos links TSI. Isso não equivale a homologação do extrator automático, ainda não alterado.
+- Autorização recebida para backup seguido das correções. Backup local concluído em `C:\SaaS-Antigravity\backups\pre_links_honda_20260928`, incluindo alterações não commitadas, bundle Git completo, dados locais privados e instalador/manifesto 2.1.10. Hashes conferidos; bundle verificado.
+- Conferência do código atual: `src/core/medallia_builder.py` ainda usa `survey3.medallia.com` e busca feedless; `src/ui/screens/extraction_screen.py` ainda tem três chamadas SSI com "160" fixo e chamadas TSI sem e-mail. **Correções autorizadas, mas ainda não implementadas nem empacotadas.**
+- Registro consolidado: `memory/links_honda_ssi_tsi_2026-09-28.md`. Não guardar e-mails, IDs ou links individuais dos clientes nesse registro.
+- Nesta atualização da memória não houve alteração do código, disparo WhatsApp, resposta de pesquisa, instalação ou publicação. Os 243 testes do build anterior não validam a correção SSI/TSI futura.
+
+## Correção SSI/TSI — 2.1.11 local — 28/09/2026
+
+- Registro anterior de correções pendentes superado: gerador local Honda implementado, sem requisição Medallia/feedless e sem cilindrada 160 fixa. E-mail vem da ficha do cliente; ID18 validado por checksum; modelo e cilindrada comercial são obrigatórios no SSI.
+- Fluxos individual e lote usam a mesma consulta da ficha. Dados ausentes/divergentes, ID incompatível ou telefone inválido bloqueiam envio; a falha em lote libera a reserva sem marcar pesquisa enviada. Preservada exclusão de números sem WhatsApp e proteção contra callbacks atrasados/duplicados.
+- Diagnóstico Ctrl+Shift+D ganhou "Gerar link (diagnóstico)": selecionar linha, consultar ficha e copiar link em caixa de texto selecionável, sem abrir pesquisa/WhatsApp, sem enviar e sem consumir cota. Exige autorização temporária e senha pelo fluxo existente; autorização é reconferida antes de exibir o resultado.
+- Dez novos testes aprovados; suíte completa com **253 testes** aprovada após alteração de versão. Scripts de filtro SSI/TSI passaram na validação sintática Node. Testes JavaScript do extrator usam fixtures DOM locais, não navegador real; tentativa de WebEngine/setHtml encerrou processo sem diagnóstico suficiente neste ambiente. Homologação no sistema real pelo proprietário permanece pendente.
+- Build oficial 2.1.11 concluído e executável aprovado no `--build-smoke-test`. Instalador local: `dist/Instalador_SaaS_Assistente_PRO_v2.1.11.exe`, 231.858.624 bytes, SHA-256 `131a897f7a3f8b49f537e05c5332b83b5c5bc788563f75fa62a433a2e8ff3868`; tamanho/hash conferidos contra manifesto. Não instalado automaticamente; homologação pelo proprietário pendente.
+- Sem publicação GitHub/OTA/site. Backup original permanece em `backups/pre_links_honda_20260928`, excluído do Git para proteger dados privados. Instruções do teste Ctrl+Shift+D registradas em `links_honda_ssi_tsi_2026-09-28.md`.
+
+## Homologação e lançamento 2.1.11 — 28/09/2026
+
+- Proprietário confirmou geração de links, envio aos clientes e contabilização no myHonda. Lançamento da versão e atualização do site expressamente autorizados.
+- Publicação GitHub/OTA/site em andamento. Manter atualização opcional, sem alterar preços, licenças, cobranças ou versão mínima.

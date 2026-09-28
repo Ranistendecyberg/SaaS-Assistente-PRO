@@ -31,8 +31,8 @@ def _run_build_smoke_test():
             about_screen, billing_dialog, company_account_screen, config_screen,
             dashboard_comparativo_screen, dashboard_screen, dashboard_ssi_screen,
             extraction_screen, license_screen, new_installation_screen,
-            password_recovery_dialog, suggestions_screen, terms_dialog,
-            tutorial_screen, user_login_dialog, whatsapp_screen,
+            password_recovery_dialog, suggestions_screen,
+            terms_dialog, tutorial_screen, user_login_dialog, whatsapp_screen,
         )
         return 0
     except BaseException:
@@ -93,7 +93,8 @@ def main():
     icon_path = os.path.join(sys._MEIPASS, 'logo.ico') if getattr(sys, 'frozen', False) else os.path.join(os.path.dirname(__file__), '..', 'logo.ico')
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
-    
+
+    from src.version import __version__
     # 1.2 Checagem de Aceite dos Termos de Uso e Isenção de Responsabilidade
     from src.ui.screens.terms_dialog import TermsDialog
     from PyQt6.QtWidgets import QDialog
@@ -104,7 +105,7 @@ def main():
     
     # 1.5 Checagem de Cadastro Inicial (Virgem) ou Incompleto
     from src.core.license_manager import LicenseManager
-    lm = LicenseManager()
+    lm = LicenseManager.get_instance()
     # Na versão 2.0, computadores sem vínculo iniciam o cadastro empresarial
     # ou usam um código descartável para entrar como computador adicional.
     # Fluxos de migração Firebase não fazem parte deste projeto isolado.
@@ -120,7 +121,7 @@ def main():
 
         resposta = QMessageBox.warning(
             None,
-            "Falha de conexão",
+            f"Falha de conexão — SaaS Assistente PRO V{__version__}",
             "Não foi possível consultar o cadastro da empresa no servidor seguro.\n\n"
             "Verifique sua conexão com a internet e tente novamente. "
             "Seu cadastro existente não será alterado.",
@@ -132,7 +133,7 @@ def main():
     status_lic = licenca_info.get("status")
     if status_lic in {"primeiro_acesso_necessario", "vinculo_invalido"}:
         QMessageBox.critical(
-            None, "Vínculo não autorizado",
+            None, f"Vínculo não autorizado — SaaS Assistente PRO V{__version__}",
             "Este computador ainda não possui um vínculo válido com a concessionária.\n\n"
             "Entre em contato com o suporte para receber orientação."
         )
@@ -141,18 +142,16 @@ def main():
     system_config = dict(licenca_info.get("system") or {})
     if system_config.get("maintenance_mode"):
         QMessageBox.information(
-            None,
-            "Sistema em manutenção",
+            None, f"Sistema em manutenção — SaaS Assistente PRO V{__version__}",
             str(system_config.get("maintenance_message") or
                 "O sistema está temporariamente em manutenção. Tente novamente mais tarde."),
         )
         sys.exit(0)
     
-    # 2. Tela de Trava de Licença (Trial/Assinatura)
+    # A tela de ativação permanece ao fundo enquanto a confirmação de
+    # licença válida é exibida, como na versão 2.1.9.
     from src.ui.screens.license_screen import LicenseScreen
-    from PyQt6.QtWidgets import QDialog
-    
-    lic_screen = LicenseScreen()
+    lic_screen = LicenseScreen(initial_status=licenca_info)
     if lic_screen.exec() == QDialog.DialogCode.Accepted:
         # 3. Inicializa e exibe a Tela Principal
         window = MainWindow()
@@ -164,7 +163,6 @@ def main():
         
         # 4. Checagem Invisível de Atualização (OTA)
         from src.core.updater import Updater
-        from src.version import __version__
         CURRENT_VERSION = __version__
         window._ota_updater = Updater(CURRENT_VERSION)
         # Executar a checagem somente depois que o loop principal do Qt estiver

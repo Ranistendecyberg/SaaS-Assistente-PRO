@@ -40,7 +40,7 @@ class NewInstallationScreen(QDialog):
         self.auth = SupabaseUserClient()
         self._task = None
         self._pending_email = ""
-        self.setWindowTitle("Primeiro acesso — SaaS Assistente PRO 2.0")
+        self.setWindowTitle(f"Primeiro acesso — SaaS Assistente PRO V{__version__}")
         available = QGuiApplication.primaryScreen().availableGeometry()
         self.setMinimumSize(620, 600)
         self.resize(

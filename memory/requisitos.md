@@ -1,5 +1,8 @@
 # Requisitos do Assistente PRO Desktop
 
+- Desde a primeira janela visível da inicialização, mostrar a versão instalada no título para identificação em chamados de suporte, inclusive em primeiro acesso, licença vencida e erros de conexão.
+- Na 2.1.10, usar uma única tela de ativação: a verificação passa a mostrar "Acesso liberado!", dias restantes e botão OK na própria janela, sem mensagem modal separada. Manter o primeiro acesso e as demais rotas como antes.
+
 ## Requisitos funcionais
 
 - Recuperar acesso do principal já cadastrado mediante senha e OTP recente do proprietário; nunca criar licença, renovar validade, remover bloqueios ou transferir o principal por esse fluxo. Equipamento diferente usa vínculo autorizado de adicional.
@@ -13,8 +16,8 @@
 7. Sanitizar telefones brasileiros e sinalizar números inválidos ou fixos.
 8. Impedir duplicidade de envio para a mesma OS ou proposta.
 9. Converter IDs Salesforce de 15 para 18 caracteres.
-10. Gerar links Medallia TSI e SSI, incluindo modelo e cilindrada quando exigidos.
-11. Obter o link feedless da Medallia quando necessário.
+10. Gerar links Honda SSI/TSI no formato validado em 28/09/2026: SSI em `cloud.motos.myhonda.com.br/ssi2w` com `e`, `Q1`, `Q2` em Base64 e `Q3` como cilindrada comercial do modelo; TSI em `cloud.motos.myhonda.com.br/tsi2w` com `e` e `Q1` em Base64. Usar e-mail da ficha, ID Salesforce de 18 caracteres e modelo SSI sem espaços em maiúsculas. Não fixar cilindrada em 160.
+11. Substituir a montagem legada Medallia/feedless; não inventar e-mail, modelo ou cilindrada quando os dados estiverem ausentes ou ambíguos. A regra nova vale para envio individual e lote, sem permitir edição manual dos dados extraídos do myHonda. Implementada na 2.1.11 local, homologação real pendente; ver `links_honda_ssi_tsi_2026-09-28.md`. Diagnóstico autorizado permite gerar/copiar o link sem envio nem consumo de cota.
 12. Criar filas de envio e reenvio, excluindo clientes que já responderam.
 13. Permitir busca, seleção individual e personalização das mensagens com variáveis de cliente e link.
 14. Permitir lotes sequenciais conforme limite por computador definido no Gerador Admin, mantendo um cliente por vez no navegador e respeitando a cota diária.
