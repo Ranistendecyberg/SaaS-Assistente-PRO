@@ -2,7 +2,7 @@
 
 ## Estado vigente
 
-O proprietário homologou a 2.1.11: "Links gerados com sucesso, enviado para os clientes e contabilizados no myhonda". Lançamento e atualização do site autorizados em 28/09/2026. Backup concluído, 253 testes aprovados e executável aprovado no `--build-smoke-test`. Publicação em andamento; confirmar os resultados no status de desenvolvimento.
+O proprietário homologou a 2.1.11: "Links gerados com sucesso, enviado para os clientes e contabilizados no myhonda". Lançamento e atualização do site autorizados e concluídos em 28/09/2026: GitHub Latest v2.1.11, OTA opcional e site público Sites versão 11. Backup concluído, 253 testes aprovados e executável aprovado no `--build-smoke-test`. Evidências no status de desenvolvimento.
 
 Instalador: `C:\SaaS-Antigravity\dist\Instalador_SaaS_Assistente_PRO_v2.1.11.exe`, 231.858.624 bytes, SHA-256 `131a897f7a3f8b49f537e05c5332b83b5c5bc788563f75fa62a433a2e8ff3868`. Tamanho e hash conferidos contra `dist/release_v2.1.11.json`. Não instalado automaticamente nesta máquina.
 
@@ -76,4 +76,4 @@ Instalador_SaaS_Assistente_PRO_v2.1.10.exe  311c036c8db274743c5608030ed4864b849c
 release_v2.1.10.json  2b0d7cd2cb5c1f71481bea8d72db0e6d4c8cbeffb92475322328022e0c61bf64
 ```
 
-O backup não inclui uma exportação do Supabase remoto ou o projeto Web. O instalador 2.1.10 guardado não contém esta correção; o novo instalador local é 2.1.11. Nenhuma publicação foi autorizada ou realizada.
+O backup não inclui uma exportação do Supabase remoto ou o projeto Web. O instalador 2.1.10 guardado não contém esta correção; o novo instalador 2.1.11 foi homologado e publicado após autorização do proprietário.

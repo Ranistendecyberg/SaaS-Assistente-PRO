@@ -13,7 +13,7 @@
 - [x] Adicionar geração somente para comparação no diagnóstico Ctrl+Shift+D, sem envio, acesso à pesquisa ou consumo de cota.
 - [x] Gerar instalador local 2.1.11 após 253 testes e `--build-smoke-test`; conferir tamanho/hash contra manifesto.
 - [x] Homologação pelo proprietário: links gerados, enviados aos clientes e contabilizados no myHonda. Lançamento GitHub/OTA e atualização do site autorizados.
-- [ ] Concluir publicação 2.1.11, confirmar asset/hash remoto, ativar OTA opcional e atualizar o site público.
+- [x] Publicar 2.1.11 como Latest no GitHub; confirmar asset/hash remoto, ativar OTA opcional no Supabase e publicar site público como Sites versão 11.
 - Especificação consolidada e inventário do backup: `memory/links_honda_ssi_tsi_2026-09-28.md`.
 
 ## Escalabilidade — auditoria 11/09/2026
