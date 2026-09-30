@@ -9,6 +9,17 @@ from src.core.pdf_report_generator import PDFReportGenerator
 import urllib.parse
 import os
 
+
+def tsi_note_colors(note):
+    """Cores do comentário pela nota geral, sem tratar nota ausente como 10."""
+    if note is None or note != note:  # NaN
+        return '#94A3B8', '#F1F5F9', '#475569'
+    if note >= 9:
+        return '#16A34A', '#DCFCE7', '#166534'
+    if note >= 7:
+        return '#F59E0B', '#FEF3C7', '#92400E'
+    return '#EF4444', '#FEE2E2', '#B91C1C'
+
 class DashboardScreen(QWidget):
     def __init__(self):
         super().__init__()
@@ -366,7 +377,7 @@ class DashboardScreen(QWidget):
         )
         
         labels_mestre = list(individual_mestre.keys())
-        tsi_data = [round(individual_mestre[k]['TSI'], 2) for k in labels_mestre]
+        tsi_data = [round(individual_mestre[k]['Top2Box'], 2) for k in labels_mestre]
         meta_data = [meta for _ in labels_mestre]
         
         # Limpar labels para exibição (nomes amigáveis)
@@ -391,7 +402,7 @@ class DashboardScreen(QWidget):
                 col_sat = 'Nota Pesquisa TSI'
                 
             if col_sat in df_com.columns:
-                df_com['_sat_num'] = pd.to_numeric(df_com[col_sat], errors='coerce').fillna(10)
+                df_com['_sat_num'] = pd.to_numeric(df_com[col_sat], errors='coerce')
                 
                 colunas_comentarios = [
                     'Motivo satisfação geral', 
@@ -426,15 +437,14 @@ class DashboardScreen(QWidget):
                             
                     if textos:
                         texto_final = "<br><br>".join(textos)
-                        cor_borda = "#EF4444" if nota <= 6 else "#F59E0B"
-                        cor_fundo_nota = "#FEE2E2" if nota <= 6 else "#FEF3C7"
-                        cor_texto_nota = "#B91C1C" if nota <= 6 else "#D97706"
+                        cor_borda, cor_fundo_nota, cor_texto_nota = tsi_note_colors(nota)
+                        nota_texto = f'{nota:.0f}' if pd.notna(nota) else '—'
         
                         comentarios_html += f'''
                         <div style="background: white; border-left: 5px solid {cor_borda}; padding: 15px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                             <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
                                 <span style="font-weight: bold; color: #1E293B; font-size: 14px;">Loja: {loja_nome}</span>
-                                <span style="background: {cor_fundo_nota}; color: {cor_texto_nota}; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">Nota Geral: {nota:.0f}</span>
+                                <span style="background: {cor_fundo_nota}; color: {cor_texto_nota}; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">Nota Geral: {nota_texto}</span>
                             </div>
                             <div style="color: #475569; font-size: 13px; line-height: 1.5;">{texto_final}</div>
                         </div>
@@ -445,7 +455,11 @@ class DashboardScreen(QWidget):
             comentarios_html = "<div style='color: #64748B; font-style: italic; padding: 10px;'>Nenhum comentário de insatisfação encontrado nos filtros atuais. Excelente! 🎉</div>"
 
         # Formatador de texto para Recuperação
-        if recup == -1:
+        if meta <= 0:
+            recup_html = "<span style='font-size:16px;'>Meta não configurada</span>"
+        elif recup == -2:
+            recup_html = "<span style='font-size:16px;'>Sem respostas válidas</span>"
+        elif recup == -1:
             recup_html = "<span>Impossível</span>"
         elif recup == 0:
             recup_html = "<span style='font-size:16px;'>Meta Atingida!</span>"
@@ -487,6 +501,7 @@ class DashboardScreen(QWidget):
         lojas_tsi = []
         lojas_qtde = []
         lojas_faltam = []
+        lojas_metas = []
         cores_lojas = []
         
         if df_filtrado_lojas is not None and 'Loja_Nome' in df_filtrado_lojas.columns:
@@ -494,10 +509,11 @@ class DashboardScreen(QWidget):
                 if str(loja).strip() in ["Desconhecida", "nan", ""]: continue
                 metrics_loja = self.engine.calculate_metrics(group)
                 if metrics_loja:
-                    tsi_val = metrics_loja['tsi_global']
+                    tsi_val = metrics_loja['top2box_global']
                     lojas_labels.append(str(loja))
                     lojas_tsi.append(round(tsi_val, 2))
                     lojas_qtde.append(len(group))
+                    lojas_metas.append(metrics_loja['meta_global'])
                     
                     recup = metrics_loja.get('pesquisas_recuperacao', 0)
                     if recup == -1: recup = 999
@@ -511,7 +527,7 @@ class DashboardScreen(QWidget):
         qtde_lojas_json = __import__('json').dumps(lojas_qtde)
         faltam_lojas_json = __import__('json').dumps(lojas_faltam)
         cores_lojas_json = __import__('json').dumps(cores_lojas)
-        meta_lojas_json = __import__('json').dumps([meta for _ in lojas_labels])
+        meta_lojas_json = __import__('json').dumps(lojas_metas)
         
 
         # Data for Categorias Chart
@@ -525,7 +541,7 @@ class DashboardScreen(QWidget):
                 if str(cat).strip() in ["nan", "", "None"]: continue
                 metrics_cat = self.engine.calculate_metrics(group)
                 if metrics_cat:
-                    tsi_val = metrics_cat['tsi_global']
+                    tsi_val = metrics_cat['top2box_global']
                     cat_labels.append(str(cat))
                     cat_tsi.append(round(tsi_val, 2))
                     cat_qtde.append(len(group))
@@ -554,7 +570,7 @@ class DashboardScreen(QWidget):
                 if str(cons).strip() in ["nan", "", "None", "Desconhecida"]: continue
                 metrics_cons = self.engine.calculate_metrics(group)
                 if metrics_cons:
-                    tsi_val = metrics_cons['tsi_global']
+                    tsi_val = metrics_cons['top2box_global']
                     nome_cons = str(cons).strip()
                     if nome_cons.isdigit():
                         nome_cons = "ID " + nome_cons[-4:]
@@ -746,23 +762,24 @@ class DashboardScreen(QWidget):
                     <div id="gauge-container"></div>
                     <div class="kpi-row">
                         <div class="kpi-mini">
-                            <h5>TOP2BOX</h5>
-                            <span>{t2b:.2f}%</span>
+                            <h5>ÍNDICE TSI</h5>
+                            <span>{tsi:.2f}%</span>
                         </div>
                         <div class="kpi-mini green">
-                            <h5>Meta TSI</h5>
+                            <h5>Meta Top2Box</h5>
                             <span>{meta:.2f}%</span>
                         </div>
                         <div class="kpi-mini red">
-                            <h5>Faltam p/ Meta</h5>
+                            <h5>Pesquisas p/ Meta Top2Box*</h5>
                             {recup_html}
                         </div>
                     </div>
+                    <div style="font-size:11px; color:#64748b;">*Estimativa com notas 9 ou 10 nos cinco blocos mestre de cada nova pesquisa.</div>
                 </div>
                 
                 <!-- Painel Direito: Análise por Bloco -->
                 <div class="glass-panel">
-                    <h2 class="section-title">Desempenho por Bloco (Meta vs Realizado TSI)</h2>
+                    <h2 class="section-title">Desempenho por Bloco (Meta vs Realizado Top2Box)</h2>
                     <div id="bar-container"></div>
                 </div>
             </div>
@@ -778,7 +795,7 @@ class DashboardScreen(QWidget):
 
             <!-- Painel Lojas -->
             <div class="glass-panel" style="margin-top: 10px;">
-                <h2 class="section-title">TSI por Concessionária vs Meta</h2>
+                <h2 class="section-title">Top2Box por Concessionária vs Meta</h2>
                 <div id="lojas-container" style="width: 100%; height: 320px;"></div>
             </div>
             
@@ -786,11 +803,11 @@ class DashboardScreen(QWidget):
             <!-- Categoria e Consultor Grid -->
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px;">
                 <div class="glass-panel">
-                    <h2 class="section-title">TSI por Categoria</h2>
+                    <h2 class="section-title">Top2Box por Categoria</h2>
                     <div id="categoria-container" style="width: 100%; height: 320px;"></div>
                 </div>
                 <div class="glass-panel">
-                    <h2 class="section-title">TSI por Consultor</h2>
+                    <h2 class="section-title">Top2Box por Consultor</h2>
                     <div id="consultor-container" style="width: 100%; height: 320px;"></div>
                 </div>
             </div>
@@ -844,7 +861,7 @@ class DashboardScreen(QWidget):
                                 offsetCenter: [0, '-5%'],
                                 formatter: function(value) {{ return value.toFixed(2) + '%'; }}
                             }},
-                            data: [{{ value: {tsi}, name: 'Resultado TSI Atual' }}]
+                            data: [{{ value: {t2b}, name: 'Resultado Top2Box Atual' }}]
                         }},
                         // Ponteiro da Meta
                         {{
@@ -864,7 +881,7 @@ class DashboardScreen(QWidget):
                             axisLabel: {{ show: false }},
                             title: {{ show: false }},
                             detail: {{ show: false }},
-                            data: [{{ value: {meta}, name: 'Meta TSI' }}]
+                            data: [{{ value: {meta}, name: 'Meta Top2Box' }}]
                         }}
                     ]
                 }};
@@ -875,7 +892,7 @@ class DashboardScreen(QWidget):
                         trigger: 'axis',
                         axisPointer: {{ type: 'cross', crossStyle: {{ color: '#999' }} }}
                     }},
-                    legend: {{ data: ['Realizado TSI', 'Meta TSI'] }},
+                    legend: {{ data: ['Realizado Top2Box', 'Meta Top2Box'] }},
                     grid: {{ left: '3%', right: '15%', bottom: '5%', containLabel: true }},
                     xAxis: [
                         {{
@@ -896,7 +913,7 @@ class DashboardScreen(QWidget):
                     ],
                     series: [
                         {{
-                            name: 'Realizado TSI',
+                            name: 'Realizado Top2Box',
                             type: 'bar',
                             z: 10,
                             barWidth: 35,
@@ -912,7 +929,7 @@ class DashboardScreen(QWidget):
                             markLine: {{
                                 z: 0,
                                 data: [
-                                    {{ yAxis: {meta}, name: 'Meta TSI' }}
+                                    {{ yAxis: {meta}, name: 'Meta Top2Box' }}
                                 ],
                                 label: {{ show: true, position: 'end', formatter: function(params) {{ return 'Meta: ' + params.value.toFixed(2) + '%'; }}, fontWeight: 'bold', color: '#ef4444' }},
                                 lineStyle: {{ width: 3, type: 'dashed', color: '#ef4444' }},
@@ -920,7 +937,7 @@ class DashboardScreen(QWidget):
                             }}
                         }},
                         {{
-                            name: 'Meta TSI',
+                            name: 'Meta Top2Box',
                             type: 'line',
                             itemStyle: {{ color: '#ef4444' }},
                             lineStyle: {{ width: 3, type: 'dashed' }},
@@ -948,16 +965,16 @@ class DashboardScreen(QWidget):
                             var p = params[0];
                             if (p.seriesName === 'Meta') return p.name + '<br/>Meta: ' + p.value + '%';
                             var q = qtde_arr[p.dataIndex];
-                            return '<b>' + p.name + '</b><br/>TSI: <b>' + p.value.toFixed(2) + '%</b><br/>Pesquisas: <b>' + q + '</b>';
+                            return '<b>' + p.name + '</b><br/>Top2Box: <b>' + p.value.toFixed(2) + '%</b><br/>Pesquisas: <b>' + q + '</b>';
                         }}
                     }},
-                    legend: {{ data: ['Índice TSI (%)', 'Meta'], bottom: 0 }},
+                    legend: {{ data: ['Top2Box (%)', 'Meta'], bottom: 0 }},
                     grid: {{ left: '3%', right: '4%', bottom: '15%', containLabel: true }},
                     xAxis: {{ type: 'category', data: {labels_lojas_json}, axisLabel: {{ interval: 0, fontWeight: 'bold' }} }},
                     yAxis: {{ type: 'value', max: 115, axisLabel: {{ formatter: '{{value}}%' }} }},
                     series: [
                         {{
-                            name: 'Índice TSI (%)',
+                            name: 'Top2Box (%)',
                             type: 'bar',
                             data: tsi_arr.map(function(val, idx) {{ return {{ value: val, itemStyle: {{ color: cores_arr[idx], borderRadius: [4,4,0,0] }} }}; }}),
                             barMaxWidth: 150,
@@ -1027,16 +1044,16 @@ class DashboardScreen(QWidget):
                                 var p = params[0];
                                 if (p.seriesName === 'Meta') return p.name + '<br/>Meta: ' + p.value + '%';
                                 var q = qtde_cat_arr[p.dataIndex];
-                                return '<b>' + p.name + '</b><br/>TSI: <b>' + p.value.toFixed(2) + '%</b><br/>Pesquisas: <b>' + q + '</b>';
+                                return '<b>' + p.name + '</b><br/>Top2Box: <b>' + p.value.toFixed(2) + '%</b><br/>Pesquisas: <b>' + q + '</b>';
                             }}
                         }},
-                        legend: {{ data: ['Índice TSI (%)', 'Meta'], bottom: 0 }},
+                        legend: {{ data: ['Top2Box (%)', 'Meta'], bottom: 0 }},
                         grid: {{ left: '3%', right: '4%', bottom: '15%', containLabel: true }},
                         xAxis: {{ type: 'category', data: {labels_cat_json}, axisLabel: {{ interval: 0, fontWeight: 'bold' }} }},
                         yAxis: {{ type: 'value', max: 115, axisLabel: {{ formatter: '{{value}}%' }} }},
                         series: [
                             {{
-                                name: 'Índice TSI (%)',
+                                name: 'Top2Box (%)',
                                 type: 'bar',
                                 data: tsi_cat_arr.map(function(val, idx) {{ return {{ value: val, itemStyle: {{ color: cores_cat_arr[idx], borderRadius: [4,4,0,0] }} }}; }}),
                                 barMaxWidth: 80,
@@ -1086,16 +1103,16 @@ class DashboardScreen(QWidget):
                                 var p = params[0];
                                 if (p.seriesName === 'Meta') return p.name + '<br/>Meta: ' + p.value + '%';
                                 var q = qtde_cons_arr[p.dataIndex];
-                                return '<b>' + p.name + '</b><br/>TSI: <b>' + p.value.toFixed(2) + '%</b><br/>Pesquisas: <b>' + q + '</b>';
+                                return '<b>' + p.name + '</b><br/>Top2Box: <b>' + p.value.toFixed(2) + '%</b><br/>Pesquisas: <b>' + q + '</b>';
                             }}
                         }},
-                        legend: {{ data: ['Índice TSI (%)', 'Meta'], bottom: 0 }},
+                        legend: {{ data: ['Top2Box (%)', 'Meta'], bottom: 0 }},
                         grid: {{ left: '3%', right: '4%', bottom: '20%', containLabel: true }},
                         xAxis: {{ type: 'category', data: {labels_cons_json}, axisLabel: {{ interval: 0, fontWeight: 'bold', rotate: 30, width: 80, overflow: 'truncate', fontSize: 11 }} }},
                         yAxis: {{ type: 'value', max: 115, axisLabel: {{ formatter: '{{value}}%' }} }},
                         series: [
                             {{
-                                name: 'Índice TSI (%)',
+                                name: 'Top2Box (%)',
                                 type: 'bar',
                                 data: tsi_cons_arr.map(function(val, idx) {{ return {{ value: val, itemStyle: {{ color: cores_cons_arr[idx], borderRadius: [4,4,0,0] }} }}; }}),
                                 barMaxWidth: 80,

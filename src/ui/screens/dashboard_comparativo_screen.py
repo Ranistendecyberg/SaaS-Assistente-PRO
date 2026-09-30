@@ -604,12 +604,14 @@ class DashboardComparativoScreen(QWidget):
 
         # Top2Box Geral
         col_geral = 'Avaliação satisfação geral'
-        if col_geral in df.columns:
-            s_geral = serie_numerica(df, col_geral).dropna()
-            s_geral = s_geral[s_geral.between(0, 10)]
-            top2box = (s_geral >= 9).sum() / len(s_geral) * 100 if len(s_geral) > 0 else 0.0
-        else:
-            top2box = 0.0
+        def calcular_top2box_grupo(grupo):
+            if col_geral not in grupo.columns:
+                return 0.0
+            notas = serie_numerica(grupo, col_geral).dropna()
+            notas = notas[notas.between(0, 10)]
+            return float((notas >= 9).sum() / len(notas) * 100) if len(notas) else 0.0
+
+        top2box = calcular_top2box_grupo(df)
 
         # Participação WhatsApp calculada exclusivamente no recorte ativo.
         total_saas_enviados, taxa_resp = self._calcular_participacao_whatsapp(df, "TSI")
@@ -655,7 +657,8 @@ class DashboardComparativoScreen(QWidget):
                 itens.append({
                     'nome': str(nome),
                     'respostas': int(len(grupo)),
-                    'tsi': calcular_tsi_grupo(grupo)
+                    'tsi': calcular_tsi_grupo(grupo),
+                    'top2box': calcular_top2box_grupo(grupo)
                 })
             return itens
 
@@ -849,6 +852,15 @@ class DashboardComparativoScreen(QWidget):
             'nps': nps_score,
             'tsi': tsi_score,
             'top2box': top2box,
+            # Mantém a meta configurada e o recorte de loja/mês/consultor.
+            'meta_top2box': (
+                float(pd.to_numeric(df['Loja_Meta'], errors='coerce').loc[
+                    lambda values: values > 0
+                ].mean())
+                if 'Loja_Meta' in df.columns
+                and (pd.to_numeric(df['Loja_Meta'], errors='coerce') > 0).any()
+                else 0.0
+            ),
             'total_respostas': total_respostas,
             'promotores_count': promotores,
             'neutros_count': neutros,
@@ -1234,8 +1246,17 @@ class DashboardComparativoScreen(QWidget):
             """
 
         tsi = metrics.get('tsi', metrics.get('nps', 0.0))
-        tsi_color = "#16A34A" if tsi >= 75 else ("#2563EB" if tsi >= 50 else "#DC2626")
         top2box = metrics.get('top2box', 0.0)
+        meta_top2box = metrics.get('meta_top2box', 0.0)
+        top2box_color = (
+            '#64748B' if meta_top2box <= 0 else
+            ('#16A34A' if top2box >= meta_top2box else '#DC2626')
+        )
+        meta_top2box_texto = (
+            f"Meta Top2Box: ≥ {meta_top2box:.1f}% • "
+            + ('Meta atingida' if top2box >= meta_top2box else 'Abaixo da meta')
+            if meta_top2box > 0 else 'Meta não configurada'
+        )
         total_resp = metrics.get('total_respostas', 0)
         saas_taxa = metrics.get('saas_taxa_resp', 0.0)
         
@@ -1303,13 +1324,14 @@ class DashboardComparativoScreen(QWidget):
 
         def render_distribuicao(itens, vazio):
             if not itens:
-                return f"<tr><td colspan='3' style='padding: 8px; text-align: center; color: #94A3B8;'>{vazio}</td></tr>"
+                return f"<tr><td colspan='4' style='padding: 8px; text-align: center; color: #94A3B8;'>{vazio}</td></tr>"
             return "".join(
                 f"""
                 <tr style='border-bottom: 1px solid #E2E8F0;'>
                     <td style='padding: 6px 4px; color: #334155; font-weight: 600;'>{item.get('nome')}</td>
                     <td style='padding: 6px 4px; text-align: center; color: #0F172A; font-weight: 700;'>{item.get('respostas')}</td>
                     <td style='padding: 6px 4px; text-align: center; color: #2563EB; font-weight: 700;'>{item.get('tsi', 0.0):.1f}%</td>
+                    <td style='padding: 6px 4px; text-align: center; color: #16A34A; font-weight: 700;'>{item.get('top2box', 0.0):.1f}%</td>
                 </tr>
                 """
                 for item in itens
@@ -1552,7 +1574,7 @@ class DashboardComparativoScreen(QWidget):
                 }}
                 .grid-kpis {{ 
                     display: grid; 
-                    grid-template-columns: repeat(5, 1fr); 
+                    grid-template-columns: repeat(6, minmax(0, 1fr));
                     gap: 10px; 
                     margin-bottom: 12px; 
                     page-break-inside: avoid;
@@ -1925,7 +1947,7 @@ class DashboardComparativoScreen(QWidget):
                 </div>
             </div>
 
-            <!-- 5 Cards no Topo: 1º Pesquisas Auditadas, 2º Índice TSI, 3º Promotores, 4º Neutros, 5º Detratores -->
+            <!-- Índice TSI informativo e meta de serviços vinculada ao Top2Box. -->
             <div class="grid-kpis">
                 <!-- Card 1: Pesquisas Auditadas -->
                 <div class="card" style="border-top: 3px solid #1E3A8A;">
@@ -1934,10 +1956,15 @@ class DashboardComparativoScreen(QWidget):
                     <div class="kpi-desc">100% Base Auditada</div>
                 </div>
                 <!-- Card 2: Índice TSI -->
-                <div class="card" style="border-top: 3px solid {tsi_color};">
+                <div class="card" style="border-top: 3px solid #2563EB;">
                     <div class="kpi-title">Índice TSI (%)</div>
-                    <div class="kpi-num" style="color: {tsi_color};">{tsi:.1f}%</div>
-                    <div class="kpi-desc">Meta Honda: ≥ 75.0</div>
+                    <div class="kpi-num" style="color: #2563EB;">{tsi:.1f}%</div>
+                    <div class="kpi-desc">Indicador TSI • meta avaliada pelo Top2Box</div>
+                </div>
+                <div class="card" style="border-top: 3px solid {top2box_color};">
+                    <div class="kpi-title">Top2Box (%)</div>
+                    <div class="kpi-num" style="color: {top2box_color};">{top2box:.1f}%</div>
+                    <div class="kpi-desc">{meta_top2box_texto}</div>
                 </div>
                 <!-- Card 3: Promotores -->
                 <div class="card" style="border-top: 3px solid #10B981;">
@@ -1970,16 +1997,16 @@ class DashboardComparativoScreen(QWidget):
                     <div class="distribution-block">
                         <div class="distribution-title">Por Loja</div>
                         <table style="width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 10px;">
-                            <colgroup><col style="width:60%;"><col style="width:20%;"><col style="width:20%;"></colgroup>
-                            <thead><tr style="background:#F8FAFC; color:#64748B;"><th style="padding:5px 4px; text-align:left;">Loja</th><th style="padding:5px 4px; text-align:center;">Resp.</th><th style="padding:5px 4px; text-align:center;">TSI</th></tr></thead>
+                            <colgroup><col style="width:40%;"><col style="width:18%;"><col style="width:18%;"><col style="width:24%;"></colgroup>
+                            <thead><tr style="background:#F8FAFC; color:#64748B;"><th style="padding:5px 4px; text-align:left;">Loja</th><th style="padding:5px 4px; text-align:center;">Resp.</th><th style="padding:5px 4px; text-align:center;">TSI</th><th style="padding:5px 4px; text-align:center;">Top2Box</th></tr></thead>
                             <tbody>{rows_lojas}</tbody>
                         </table>
                     </div>
                     <div class="distribution-block">
                         <div class="distribution-title">Por Segmento da Motocicleta</div>
                         <table style="width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 10px;">
-                            <colgroup><col style="width:60%;"><col style="width:20%;"><col style="width:20%;"></colgroup>
-                            <thead><tr style="background:#F8FAFC; color:#64748B;"><th style="padding:5px 4px; text-align:left;">Segmento</th><th style="padding:5px 4px; text-align:center;">Resp.</th><th style="padding:5px 4px; text-align:center;">TSI</th></tr></thead>
+                            <colgroup><col style="width:40%;"><col style="width:18%;"><col style="width:18%;"><col style="width:24%;"></colgroup>
+                            <thead><tr style="background:#F8FAFC; color:#64748B;"><th style="padding:5px 4px; text-align:left;">Segmento</th><th style="padding:5px 4px; text-align:center;">Resp.</th><th style="padding:5px 4px; text-align:center;">TSI</th><th style="padding:5px 4px; text-align:center;">Top2Box</th></tr></thead>
                             <tbody>{rows_segmentos}</tbody>
                         </table>
                     </div>

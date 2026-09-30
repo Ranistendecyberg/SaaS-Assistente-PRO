@@ -141,3 +141,6 @@ Após a confirmação do usuário, o Desktop baixa o instalador por HTTPS, valid
 - Usuário autorizou backup antes das correções. Backup local concluído; implementação e 253 testes aprovados para a 2.1.11. Após homologar geração, envio e contabilização no myHonda, o proprietário autorizou lançamento e atualização do site: GitHub Latest, OTA opcional e Sites versão 11 publicados em 28/09/2026. Manter versão mínima e regras financeiras inalteradas.
 - Para o teste solicitado com Ctrl+Shift+D, disponibilizar geração somente de leitura do link selecionado: mesma consulta e builder do fluxo operacional, sem WhatsApp, pesquisa aberta ou cota consumida, com autorização temporária reconferida ao concluir.
 - Especificação e evidências resumidas em `links_honda_ssi_tsi_2026-09-28.md`; testes futuros devem usar dados fictícios, sem abrir pesquisas ou enviar mensagens a clientes reais.
+## 29/09/2026 — Candidata incremental sem novo instalador
+
+- Proprietário orientou que, após a coluna Top2Box no relatório gerencial, as próximas melhorias sejam analisadas e implementadas no código antes de gerar outro EXE. Novo executável/instalador somente após OK explícito ao concluir o conjunto de melhorias. Não publicar nem ativar OTA nessa etapa.

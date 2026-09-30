@@ -1,5 +1,10 @@
 # Plano de Implementação — Assistente PRO Desktop
 
+## Versão 3.0 — lembrar no início do planejamento
+
+- [ ] Reabrir com o proprietário a prevenção de reenvio duplicado entre computadores da mesma conta empresarial. Ele decidiu adiar a implementação até a versão 3.0; não incluir nas próximas correções da linha 2.x por iniciativa própria.
+- [ ] Na 3.0, definir contrato de histórico compartilhado no Supabase por conta, tipo e ID da pesquisa, com reserva atômica, confirmação, estado incerto e conciliação dos históricos locais; preservar cota por instalação e os dados originais do myHonda. Antes de desenvolver, confirmar regras de operação e implantação com o proprietário.
+
 ## SSI/TSI — padrões validados e correção autorizada — 28/09/2026
 
 - [x] Remover as três chamadas SSI com "160" fixo e unificar geração: cilindrada comercial extraída do modelo myHonda, sem editar origem e sem fallback 160. Código 2.1.11 local.

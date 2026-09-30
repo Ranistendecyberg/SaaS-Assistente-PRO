@@ -41,10 +41,10 @@ class ConfigScreen(QWidget):
         self.in_loja_cnpj = QLineEdit()
         self.in_loja_cnpj.setPlaceholderText("Somente números")
         self.in_loja_meta_tsi = QLineEdit()
-        self.in_loja_meta_tsi.setPlaceholderText("Ex: 15")
+        self.in_loja_meta_tsi.setPlaceholderText("Percentual Top2Box, ex: 85")
         form_lojas.addRow("Nome da Loja:", self.in_loja_nome)
         form_lojas.addRow("Código:", self.in_loja_cnpj)
-        form_lojas.addRow("Meta TSI:", self.in_loja_meta_tsi)
+        form_lojas.addRow("Meta Top2Box (Serviços):", self.in_loja_meta_tsi)
         layout_lojas.addLayout(form_lojas)
         
         btn_add_loja = QPushButton("➕ Adicionar Loja")
@@ -151,7 +151,7 @@ class ConfigScreen(QWidget):
         self.lista_lojas.clear()
         for loja in self.config_data.get("lojas", []):
             meta = loja.get('meta_tsi', '0')
-            self.lista_lojas.addItem(f"{loja['nome']} (Código: {loja['cnpj']} | Meta TSI: {meta})")
+            self.lista_lojas.addItem(f"{loja['nome']} (Código: {loja['cnpj']} | Meta Top2Box: {meta}%)")
             
         self.lista_cons.clear()
         for cons in self.config_data.get("consultores", []):

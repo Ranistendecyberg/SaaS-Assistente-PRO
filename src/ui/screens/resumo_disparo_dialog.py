@@ -40,7 +40,7 @@ class ResumoDisparoDialog(QDialog):
         header_layout.addWidget(lbl_titulo)
         
         total_erros = len(self.clientes)
-        lbl_subtitulo = QLabel(f"Identificamos {total_erros} cliente(s) que não receberam a pesquisa devido a inconsistências de cadastro no myHonda:")
+        lbl_subtitulo = QLabel(f"Identificamos {total_erros} cliente(s) cujo envio não foi concluído. Consulte o motivo antes de tentar novamente:")
         lbl_subtitulo.setStyleSheet("font-size: 13px; color: #64748B;")
         lbl_subtitulo.setWordWrap(True)
         header_layout.addWidget(lbl_subtitulo)

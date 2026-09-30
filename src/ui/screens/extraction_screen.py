@@ -2200,28 +2200,29 @@ class ExtractionScreen(QWidget):
                 login_redirect="login" in self.nav_ssi_oculto.url().toString().lower(),
             )
         if self.tentativas > 10:
+            url_atual = self.nav_ssi_oculto.url().toString().lower()
+            login_redirect = 'login' in url_atual
+            motivo = (
+                'Sessão do myHonda expirada ou redirecionada para login. '
+                'Entre novamente no myHonda e tente reenviar esta pesquisa.'
+                if login_redirect else
+                'A ficha do cliente não carregou no tempo esperado. '
+                'Confira a conexão e a sessão do myHonda antes de tentar novamente.'
+            )
             self._invalidate_ssi_lookup()
             if getattr(self, 'modo_conversa_individual', False):
                 self.modo_conversa_individual = False
-                self.status_honda.setText("⚠️ Tempo esgotado na ficha.")
-                QMessageBox.warning(self, "Timeout", "Tempo esgotado ao abrir a ficha do cliente no myHonda.")
+                self.status_honda.setText("⚠️ Ficha não carregada; pesquisa não enviada.")
+                QMessageBox.warning(self, "Pesquisa não enviada", motivo)
                 return
-                
-            if not hasattr(self, 'clientes_nao_enviados'):
-                self.clientes_nao_enviados = []
-            self.clientes_nao_enviados.append({
-                'cliente': self.item_atual.get('cliente', 'Desconhecido'),
-                'tipo': self.item_atual.get('tipo', 'SSI'),
-                'telefone': 'S/N',
-                'motivo': 'Tempo esgotado ao abrir ficha no myHonda'
-            })
+            self.item_atual['_whatsapp_failure_reason'] = motivo
             record_event(
                 "ssi_dispatch", "CONTACT_PAGE_TIMEOUT", "ERROR",
                 survey_ref=anonymous_id(self.item_atual.get('id', '')),
                 attempts=self.tentativas,
                 elapsed_ms=self.tentativas * 2000,
                 final_domain=self.nav_ssi_oculto.url().host(),
-                login_redirect="login" in self.nav_ssi_oculto.url().toString().lower(),
+                login_redirect=login_redirect,
             )
             self.on_whatsapp_message_sent(False)
             return

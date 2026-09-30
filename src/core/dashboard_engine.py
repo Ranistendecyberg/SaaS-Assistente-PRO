@@ -276,16 +276,17 @@ class DashboardEngine:
         else:
             meta_global = 0
         
-        # Cálculo de recuperação de meta
+        # Meta de serviços baseada em Top2Box; os índices não mudam.
         pesquisas_recuperacao = 0
-        if meta_global > tsi_global:
-            if meta_global >= 100:
+        if meta_global > top2box_global:
+            if total_respostas_mestre == 0:
+                pesquisas_recuperacao = -2 # Sem respostas válidas para projeção.
+            elif meta_global >= 100:
                 pesquisas_recuperacao = -1 # Impossível
             else:
-                m = meta_global / 100.0
-                N_max = total_respostas_mestre * 10
-                numerador = (m * N_max) - soma_notas
-                denominador = 50 * (1 - m)
+                numerador = (meta_global * total_respostas_mestre) - 100 * top2box_count
+                # Cada nova pesquisa deve ter os cinco blocos com nota 9/10.
+                denominador = 5 * (100 - meta_global)
                 if denominador > 0:
                     pesquisas_recuperacao = max(0, math.ceil(numerador / denominador))
 

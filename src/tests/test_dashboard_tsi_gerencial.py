@@ -70,10 +70,40 @@ def test_tsi_usa_nota_oficial_e_mantem_ausencia_no_denominador():
     assert metricas['dimensoes']['Agendamento'] == 75.0
     assert metricas['dimensoes_detalhes']['Agendamento'] == {'top2': 3, 'validas': 4}
     assert metricas['distribuicao_segmentos'] == [
-        {'nome': 'Baixa', 'respostas': 4, 'tsi': 99.5}
+        {'nome': 'Baixa', 'respostas': 4, 'tsi': 99.5, 'top2box': 100.0}
     ]
 
     rita = next(item for item in ranking if item['nome'] == 'Rita')
     assert rita['tsi'] == 99.0
     assert rita['pilares']['Agendamento'] == 50.0
     assert rita['pilares_contagens']['Agendamento'] == {'top2': 1, 'validas': 2}
+
+
+def test_distribuicao_top2box_por_loja_e_segmento_respeita_filtro():
+    tela = _TelaFake()
+    registros = [
+        _registro('1', 'Cliente A', 'Rita', '98,00', 10),
+        _registro('2', 'Cliente B', 'Rita', '96,00', 10),
+        _registro('3', 'Cliente C', 'Outro', '90,00', 10),
+    ]
+    registros[1]['Avaliação satisfação geral'] = 8
+    registros[2]['Loja_Nome'] = 'Loja Lago'
+    registros[2]['Categoria Produto'] = 'Scooter'
+    tela.df_tsi = pd.DataFrame(registros)
+    tela.combo_loja = _Combo('Todas as Unidades')
+    tela.combo_mes = _Combo('08/2026')
+    tela.combo_consultor = _Combo('Todos')
+    tela.sent_surveys = set()
+    tela.db = _DbFake()
+    tela.engine_tsi = SimpleNamespace(_normalizar_rotulo=lambda valor: str(valor).lower())
+
+    metricas, _, _, _ = DashboardComparativoScreen._calcular_metricas_tsi(tela)
+    assert abs(metricas['top2box'] - 200 / 3) < 1e-10
+    assert metricas['distribuicao_lojas'] == [
+        {'nome': 'Loja Bacabal', 'respostas': 2, 'tsi': 97.0, 'top2box': 50.0},
+        {'nome': 'Loja Lago', 'respostas': 1, 'tsi': 90.0, 'top2box': 100.0},
+    ]
+    assert metricas['distribuicao_segmentos'] == [
+        {'nome': 'Baixa', 'respostas': 2, 'tsi': 97.0, 'top2box': 50.0},
+        {'nome': 'Scooter', 'respostas': 1, 'tsi': 90.0, 'top2box': 100.0},
+    ]

@@ -3,6 +3,8 @@
 /private_db_backups/
 /Dados/
 /backups/
+/manutenção/
+/manutencao/
 *.db
 *.db-*
 *.sqlite

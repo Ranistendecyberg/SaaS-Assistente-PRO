@@ -5,6 +5,8 @@
 
 ## Requisitos funcionais
 
+- Pendente de definição/implementação: numa conta empresarial com dois computadores, impedir que a mesma pesquisa (tipo SSI/TSI + ID da ficha) seja enviada duas vezes. Hoje `sent_surveys.json` é local e a reserva remota controla só a cota por instalação, sem chave de pesquisa. Proposta: registro compartilhado por conta com reivindicação atômica, consulta nas listas e estados enviado, em andamento e incerto; nunca repetir automaticamente um envio de confirmação ambígua. Confirmar com o proprietário se o bloqueio deve valer em todo o grupo ou só na mesma unidade. Não alterar dados extraídos do myHonda.
+
 - Recuperar acesso do principal já cadastrado mediante senha e OTP recente do proprietário; nunca criar licença, renovar validade, remover bloqueios ou transferir o principal por esse fluxo. Equipamento diferente usa vínculo autorizado de adicional.
 
 1. Validar licença por identificador do equipamento, validade, concessionária, quantidade de lojas e módulos autorizados (TSI, SSI ou ambos).
