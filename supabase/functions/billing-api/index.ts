@@ -1,5 +1,5 @@
 import { cleanText, jsonResponse, readJson } from "../_shared/http.ts";
-import { requireUser, serviceClient } from "../_shared/security.ts";
+import { requireAdmin, requireUser, serviceClient } from "../_shared/security.ts";
 import { normalizeCnpj, requireCompanyMember, validDocument, validEmail } from "../_shared/v2.ts";
 
 const MP_ORDERS_URL = "https://api.mercadopago.com/v1/orders";
@@ -307,17 +307,59 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, 405);
   try {
     const body = await readJson(req);
-    const action = cleanText(body.action, 80);
+    const requestedAction = cleanText(body.action, 80);
+    const adminActions: Record<string, string> = {
+      admin_billing_summary: "billing_summary",
+      admin_create_boleto: "create_payment",
+      admin_refresh_payment_status: "refresh_payment_status",
+      admin_save_billing_profile: "save_billing_profile",
+    };
+    const adminBilling = Object.hasOwn(adminActions, requestedAction);
+    const action = adminBilling ? adminActions[requestedAction] : requestedAction;
     const companyId = cleanText(body.company_id, 64);
-    const { client, user, payload } = await requireUser(req);
+    const auth = adminBilling
+      ? await requireAdmin(req, action !== "billing_summary")
+      : await requireUser(req);
+    const { client, user } = auth;
+    let billingUserId = user.id;
     const mutation = action === "save_billing_profile";
     const ownerOnly = [
       "save_billing_profile", "create_payment", "refresh_payment_status",
       "cancel_test_payment",
     ].includes(action);
-    await requireCompanyMember(client, user.id, companyId, {
-      mutation, ownerOnly, payload,
-    });
+    if (adminBilling) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(companyId)) {
+        return jsonResponse({ error: "COMPANY_REQUIRED" }, 400);
+      }
+      if (action !== "billing_summary") {
+        // A operação administrativa usa a mesma fatura, locks e idempotência
+        // da conta. O titular é resolvido no servidor, nunca pelo chamador.
+        if (action !== "save_billing_profile") {
+          const { data: owner, error: ownerError } = await client.from("company_members")
+            .select("user_id").eq("company_id", companyId)
+            .eq("role", "owner").eq("active", true).single();
+          if (ownerError || !owner?.user_id) throw new Error("BILLING_OWNER_REQUIRED");
+          billingUserId = owner.user_id;
+        } else {
+          const { data: company, error: companyError } = await client.from("companies")
+            .select("id").eq("id", companyId).maybeSingle();
+          if (companyError) throw companyError;
+          if (!company) return jsonResponse({ error: "ENTERPRISE_NOT_FOUND" }, 404);
+        }
+        const { error: auditError } = await client.from("audit_events").insert({
+          actor_user_id: user.id,
+          action: action === "create_payment" ? "billing.boleto_requested"
+            : action === "save_billing_profile" ? "billing.profile_update_requested" : "billing.status_requested",
+          target_type: "company", target_id: companyId,
+          metadata: { channel: "admin", payment_method: action === "create_payment" ? "boleto" : undefined },
+        });
+        if (auditError) throw auditError;
+      }
+    } else {
+      await requireCompanyMember(client, user.id, companyId, {
+        mutation, ownerOnly, payload: "payload" in auth ? auth.payload : undefined,
+      });
+    }
 
     if (action === "cancel_test_payment") {
       const attemptId = cleanText(body.attempt_id, 64);
@@ -419,7 +461,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "INVALID_ATTEMPT_ID" }, 400);
       }
       const { data: claim, error } = await client.rpc("claim_payment_status_check_server", {
-        p_user_id: user.id, p_company_id: companyId, p_attempt_id: attemptId,
+        p_user_id: billingUserId, p_company_id: companyId, p_attempt_id: attemptId,
       });
       if (error) throw error;
       if (!claim?.ok) {
@@ -467,6 +509,9 @@ Deno.serve(async (req) => {
             && !(cases.data || []).length;
           Object.assign(attempt, { payable, invoice_snapshot: undefined });
           if (!payable) Object.assign(attempt,{payment_url:null,pix_copy_paste:null,boleto_barcode:null});
+          if (!adminBilling && attempt.payment_method === "boleto") {
+            Object.assign(attempt, { payment_url: null, boleto_barcode: null, pix_copy_paste: null });
+          }
         }
       }
       return jsonResponse({ ok: true, profile: profile.data, invoices: invoices.data || [],
@@ -501,7 +546,10 @@ Deno.serve(async (req) => {
     }
 
     if (action === "create_payment") {
-      const method = cleanText(body.payment_method, 20);
+      const method = adminBilling ? "boleto" : cleanText(body.payment_method, 20);
+      if (!adminBilling && method === "boleto") {
+        return jsonResponse({ error: "BOLETO_ADMIN_ONLY" }, 403);
+      }
       if (!["pix", "boleto"].includes(method)) {
         return jsonResponse({ error: "INVALID_PAYMENT_METHOD" }, 400);
       }
@@ -511,14 +559,14 @@ Deno.serve(async (req) => {
       if (!profile) return jsonResponse({ error: "BILLING_PROFILE_REQUIRED" }, 409);
 
       const invoiceResult = await client.rpc("prepare_company_invoice_server", {
-        p_user_id: user.id, p_company_id: companyId,
+        p_user_id: billingUserId, p_company_id: companyId,
       });
       if (invoiceResult.error) throw invoiceResult.error;
       if (!invoiceResult.data?.ok) throw new Error(invoiceResult.data?.error || "INVOICE_PREPARATION_FAILED");
       let invoice = invoiceResult.data.invoice;
       await cancelSupersededAttempts(client, invoiceResult.data.superseded_attempts);
       const attemptResult = await client.rpc("prepare_billing_attempt_server", {
-        p_user_id: user.id, p_invoice_id: invoice.id, p_payment_method: method,
+        p_user_id: billingUserId, p_invoice_id: invoice.id, p_payment_method: method,
       });
       if (attemptResult.error) throw attemptResult.error;
       if (!attemptResult.data?.ok) throw new Error(attemptResult.data?.error || "ATTEMPT_PREPARATION_FAILED");
@@ -646,10 +694,10 @@ Deno.serve(async (req) => {
   } catch (error) {
     const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
     const status = code === "UNAUTHORIZED" ? 401
-      : ["FORBIDDEN", "OWNER_REQUIRED"].includes(code) ? 403
-      : code === "EMAIL_OTP_REQUIRED" ? 428
+      : ["FORBIDDEN", "OWNER_REQUIRED", "BOLETO_ADMIN_ONLY"].includes(code) ? 403
+      : ["EMAIL_OTP_REQUIRED", "MFA_REQUIRED"].includes(code) ? 428
       : ["PAYMENT_RECONCILIATION_REQUIRED", "PAYMENT_REPRICE_CANCELLATION_FAILED"].includes(code) ? 409
-      : ["BILLING_PROFILE_REQUIRED", "INVOICE_NOT_OPEN", "INVOICE_CHANGED", "PAYMENT_METHOD_ALREADY_PENDING"].includes(code) ? 409
+      : ["BILLING_PROFILE_REQUIRED", "BILLING_OWNER_REQUIRED", "INVOICE_NOT_OPEN", "INVOICE_CHANGED", "PAYMENT_METHOD_ALREADY_PENDING"].includes(code) ? 409
       : ["INVALID_PAYMENT_METHOD", "INVALID_BILLING_PROFILE"].includes(code) ? 400
       : code === "PAYMENT_RATE_LIMITED" ? 429
       : code === "PAYMENT_PROVIDER_ERROR" ? 502

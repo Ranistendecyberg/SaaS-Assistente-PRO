@@ -13,6 +13,7 @@ import re
 import threading
 import tkinter as tk
 import urllib.request
+import webbrowser
 from decimal import Decimal, InvalidOperation
 from urllib.parse import unquote
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -437,6 +438,9 @@ class SupabaseAdminApp(ctk.CTk):
         ).grid(row=0, column=2, padx=(4, 0))
         self.transfer_button = self._toolbar_button(toolbar, "Tornar Principal", self.transfer_principal, "#8B5CF6")
         self.transfer_button.grid(row=0, column=3, padx=(4, 0))
+        self._toolbar_button(toolbar, "Boleto", self.show_enterprise_boleto, WARNING).grid(
+            row=0, column=4, padx=(4, 0),
+        )
 
         frame = ctk.CTkFrame(
             self.tab_enterprises, fg_color=CARD, border_width=1, border_color=BORDER,
@@ -476,6 +480,214 @@ class SupabaseAdminApp(ctk.CTk):
         self.enterprise_count.grid(row=3, column=0, sticky="w", pady=(8, 0))
         self._toolbar_button(self.tab_enterprises, "Pagamentos que precisam de conferência",
                              self.show_billing_reconciliation, WARNING).grid(row=4, column=0, sticky="w", pady=8)
+
+    def show_enterprise_boleto(self):
+        company, _installation = self._selected_enterprise()
+        if not company:
+            return
+        company_id = str(company.get("id") or "")
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Cobrança por boleto — Gerador Admin")
+        dialog.geometry("680x540")
+        dialog.transient(self)
+        dialog.grab_set()
+        center_window(dialog, 680, 540, parent=self)
+        ctk.CTkLabel(dialog, text=str(company.get("name") or "Empresa"),
+                     font=ctk.CTkFont(size=20, weight="bold")).pack(padx=20, pady=(20, 8))
+        info = ctk.CTkLabel(dialog, text="Consultando dados de cobrança...", wraplength=620,
+                           justify="left")
+        info.pack(fill="x", padx=20, pady=8)
+        result = ctk.CTkTextbox(dialog, height=170, wrap="word")
+        result.pack(fill="both", expand=True, padx=20, pady=8)
+        state = {"attempt": {}, "profile": {}}
+        self._toolbar_button(dialog, "Dados de cobrança", lambda: edit_profile()).pack(
+            anchor="w", padx=20, pady=(0, 6), before=result,
+        )
+        actions = ctk.CTkFrame(dialog, fg_color="transparent")
+        actions.pack(fill="x", padx=20, pady=14)
+
+        def display(text):
+            result.configure(state="normal")
+            result.delete("1.0", "end")
+            result.insert("1.0", text)
+            result.configure(state="disabled")
+
+        def request(action, **payload):
+            return self.client.billing_request(self.session.access_token, action,
+                                               company_id=company_id, **payload)
+
+        def edit_profile():
+            editor = ctk.CTkToplevel(dialog)
+            editor.title("Dados do pagador — Gerador Admin")
+            editor.transient(dialog)
+            editor.grab_set()
+            center_window(editor, 660, 650, parent=self)
+            ctk.CTkLabel(editor, text="Dados de cobrança", font=ctk.CTkFont(size=20, weight="bold")).pack(
+                padx=20, pady=(18, 6))
+            ctk.CTkLabel(editor, text="Informe os dados reais do pagador desta empresa.",
+                         wraplength=580).pack(padx=20, pady=(0, 10))
+            form = ctk.CTkScrollableFrame(editor)
+            form.pack(fill="both", expand=True, padx=20, pady=8)
+            form.grid_columnconfigure(1, weight=1)
+            fields = {}
+            labels = (
+                ("legal_name", "Nome / razão social"), ("billing_cnpj", "CPF ou CNPJ"),
+                ("billing_email", "E-mail de cobrança"), ("postal_code", "CEP"),
+                ("street", "Rua / avenida"), ("street_number", "Número"),
+                ("address_extra", "Complemento (opcional)"), ("neighborhood", "Bairro"),
+                ("city", "Cidade"), ("state", "UF"),
+            )
+            for row, (key, label) in enumerate(labels):
+                ctk.CTkLabel(form, text=label, anchor="w").grid(row=row, column=0, sticky="w", padx=8, pady=8)
+                entry = ctk.CTkEntry(form, height=36)
+                entry.grid(row=row, column=1, sticky="ew", padx=8, pady=8)
+                value = state["profile"].get(key) or (company.get("name") if key == "legal_name" else "")
+                entry.insert(0, str(value or ""))
+                fields[key] = entry
+
+            def save_profile():
+                payload = {key: entry.get().strip() for key, entry in fields.items()}
+                save.configure(state="disabled")
+                def accepted(_response):
+                    if editor.winfo_exists():
+                        editor.destroy()
+                    if dialog.winfo_exists():
+                        dialog.grab_set()
+                        self._run(lambda: request("admin_billing_summary"), loaded, "Atualizando dados de cobrança...")
+                def failed(error):
+                    if editor.winfo_exists():
+                        save.configure(state="normal")
+                    self._show_error(error)
+                self._run(lambda: request("admin_save_billing_profile", **payload), accepted,
+                          "Salvando dados do pagador...", on_error=failed)
+            save = self._toolbar_button(editor, "Salvar dados de cobrança", save_profile)
+            save.pack(fill="x", padx=20, pady=(8, 18))
+
+            def close_editor():
+                editor.destroy()
+                if dialog.winfo_exists():
+                    dialog.grab_set()
+            editor.protocol("WM_DELETE_WINDOW", close_editor)
+
+        def show_attempt(invoice, attempt):
+            if not dialog.winfo_exists():
+                return
+            state["attempt"] = {}
+            copy_button.configure(state="disabled")
+            open_button.configure(state="disabled")
+            if attempt.get("payment_method") != "boleto":
+                display("Existe um PIX pendente nesta fatura. Aguarde a confirmação ou "
+                        "regularize a cobrança antes de emitir boleto.")
+                generate.configure(state="disabled")
+                return
+            amount = invoice.get("total_amount")
+            try:
+                value = Decimal(str(amount))
+                if not value.is_finite() or value <= 0 or value != value.quantize(Decimal("0.01")):
+                    raise ValueError("Valor inválido")
+            except (InvalidOperation, ValueError):
+                display("O servidor não informou um valor válido para esta fatura.")
+                return
+            environment = str(attempt.get("provider_environment") or "")
+            if environment not in {"test", "production"}:
+                display("O servidor não confirmou o ambiente deste pagamento.")
+                return
+            amount_text = f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            display(f"{'TESTE — sem movimentação financeira' if environment == 'test' else 'PRODUÇÃO — cobrança real'}\n"
+                    f"Valor: {amount_text}\nStatus: {attempt.get('status', 'pending')}\n"
+                    f"Validade: {attempt.get('expires_at') or 'Consulte o boleto'}\n\n"
+                    "O acesso é renovado após confirmação do Mercado Pago.")
+            if invoice.get("status", "open") != "open" or attempt.get("status") != "pending" \
+                    or attempt.get("payable") is False:
+                return
+            if attempt.get("expires_at"):
+                try:
+                    expiry = dt.datetime.fromisoformat(str(attempt['expires_at']).replace('Z', '+00:00'))
+                    if expiry.tzinfo is None or expiry <= dt.datetime.now(dt.timezone.utc):
+                        return
+                except ValueError:
+                    return
+            state["attempt"] = dict(attempt)
+            copy_button.configure(state="normal" if attempt.get("boleto_barcode") else "disabled")
+            open_button.configure(state="normal" if str(attempt.get("payment_url") or "").startswith("https://") else "disabled")
+
+        def loaded(response):
+            if not dialog.winfo_exists():
+                return
+            profile = response.get("profile") or {}
+            state["profile"] = dict(profile)
+            environment = response.get("payment_environment")
+            info.configure(text=f"Pagador: {profile.get('legal_name') or 'Dados não cadastrados'}\n"
+                           f"Ambiente: {'Teste' if environment == 'test' else 'Produção'}")
+            generate.configure(state="normal" if profile and environment in {"test", "production"}
+                               and not response.get("reconciliation_required") else "disabled")
+            state["attempt"] = {}
+            copy_button.configure(state="disabled")
+            open_button.configure(state="disabled")
+            if response.get("reconciliation_required"):
+                display("Há um pagamento em conferência. Regularize a cobrança antes de emitir boleto.")
+                return
+            for invoice in response.get("invoices") or []:
+                if invoice.get("status") != "open":
+                    continue
+                pending = next((a for a in invoice.get("billing_payment_attempts") or []
+                                if a.get("status") == "pending"), None)
+                if pending:
+                    show_attempt(invoice, pending)
+                    return
+            display("Clique em Gerar boleto para emitir a cobrança consolidada desta empresa."
+                    if profile else "Clique em Dados de cobrança para cadastrar o pagador aqui no Gerador Admin.")
+
+        def generate_boleto():
+            generate.configure(state="disabled")
+            def failed(error):
+                if dialog.winfo_exists():
+                    generate.configure(state="normal")
+                self._show_error(error)
+            self._run(lambda: request("admin_create_boleto"),
+                      lambda response: show_attempt(response.get("invoice") or {}, response.get("attempt") or {}),
+                      "Gerando boleto...", on_error=failed)
+
+        def current_boleto():
+            attempt = state["attempt"]
+            if attempt.get("expires_at"):
+                try:
+                    expiry = dt.datetime.fromisoformat(str(attempt['expires_at']).replace('Z', '+00:00'))
+                    if expiry.tzinfo is None or expiry <= dt.datetime.now(dt.timezone.utc):
+                        display("Este boleto expirou. Atualize a cobrança antes de utilizá-lo.")
+                        return {}
+                except ValueError:
+                    return {}
+            return attempt
+
+        def copy_code():
+            code = str(current_boleto().get("boleto_barcode") or "")
+            if code:
+                self.clipboard_clear()
+                self.clipboard_append(code)
+
+        def open_boleto():
+            url = str(current_boleto().get("payment_url") or "")
+            if url.startswith("https://"):
+                webbrowser.open(url)
+
+        generate = self._toolbar_button(actions, "Gerar boleto", generate_boleto, WARNING)
+        generate.pack(side="left", padx=(0, 8))
+        generate.configure(state="disabled")
+        copy_button = self._toolbar_button(actions, "Copiar linha", copy_code)
+        copy_button.pack(side="left", padx=4)
+        copy_button.configure(state="disabled")
+        open_button = self._toolbar_button(actions, "Abrir boleto", open_boleto)
+        open_button.pack(side="left", padx=4)
+        open_button.configure(state="disabled")
+        def refresh():
+            def operation():
+                if state["attempt"].get("id"):
+                    request("admin_refresh_payment_status", attempt_id=state["attempt"]["id"])
+                return request("admin_billing_summary")
+            self._run(operation, loaded, "Consultando cobrança...")
+        self._toolbar_button(actions, "Atualizar", refresh).pack(side="right")
+        self._run(lambda: request("admin_billing_summary"), loaded, "Consultando cobrança...")
 
     def show_billing_reconciliation(self):
         def loaded(response):

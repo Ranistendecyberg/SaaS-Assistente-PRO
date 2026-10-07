@@ -2,7 +2,7 @@
 
 ## Escopo de pagamento confirmado — 11/09/2026
 
-- Manter PIX em Payments API, sem cartão e sem migrar para Orders apenas para pontuação. Boleto permanece separado, sem autorização de remoção.
+- Manter PIX em Payments API, sem cartão e sem migrar para Orders apenas para pontuação. Atualização de escopo em 07/10/2026: boleto mantido exclusivamente no Gerador Admin, removido das opções do Desktop do cliente.
 - Teste Orders realizado pelo usuário com credencial de teste aprovou pagamento simulado e recebeu nota 14/100; não representa o fluxo PIX do SaaS nem homologação completa. Não registrar credenciais, senha ou OTP na memória.
 - Manter principal e adicional; não remover máquinas para alterar cobrança. Priorizar recuperação segura de status, idempotência e composição imutável da fatura.
 
@@ -144,3 +144,15 @@ Após a confirmação do usuário, o Desktop baixa o instalador por HTTPS, valid
 ## 29/09/2026 — Candidata incremental sem novo instalador
 
 - Proprietário orientou que, após a coluna Top2Box no relatório gerencial, as próximas melhorias sejam analisadas e implementadas no código antes de gerar outro EXE. Novo executável/instalador somente após OK explícito ao concluir o conjunto de melhorias. Não publicar nem ativar OTA nessa etapa.
+
+## 05/10/2026 — Top2Box oficial no relatório gerencial TSI
+
+- O Top2Box do Relatório Gerencial Geral deve corresponder à média de `Nota Top2Box` informada pelo myHonda, em escala 0–100, no mesmo recorte de mês, loja e consultor. A nota de `Avaliação satisfação geral` não substitui esse indicador. Aplicar a mesma fonte no KPI, nas distribuições por loja/segmento e no ranking por consultor. Para histórico sem nota oficial, derivar dos cinco pilares mestre TSI. Correção local até autorização para nova versão.
+
+## 07/10/2026 — PIX no cliente; boleto no Gerador Admin
+
+- Proprietário decidiu que o Desktop deve oferecer somente PIX. Boleto é emitido pela administração por empresa, usando os dados de cobrança cadastrados, a fatura consolidada e a integração Mercado Pago existente. Cobranças pendentes não devem ser canceladas apenas para retirar a opção da interface.
+- Rotas administrativas de cobrança exigem administrador autenticado e MFA nas mutações. O titular ativo é resolvido no servidor para reutilizar as RPCs empresariais existentes, e a solicitação registra o administrador real em `audit_events`. O cliente não pode gerar boleto pela API nem receber seus artefatos pagáveis; mantém consulta de status de cobranças já emitidas.
+- Preparar publicação coordenada da função billing-api e dos pacotes Desktop/Admin; a alteração ainda está local. Não gerar cobranças reais para testes nem publicar automaticamente nesta rodada.
+- Atualização posterior em 07/10/2026: proprietário autorizou a publicação imediata da billing-api para habilitar o teste do Admin. Função v22 ativa; EXE Admin entregue reutilizado. A retirada visual do boleto do Desktop permanece para a próxima compilação. NF automática segue aguardando CNPJ; geração e envio de NF/boleto devem pertencer ao fluxo administrativo.
+- Fluxo completado após o teste retornar ausência de pagador: cadastrar e editar dados de cobrança também pelo Gerador Admin, com validação no servidor, MFA e auditoria. Não exigir que o cliente entre no Desktop para cadastrar o pagador antes do boleto. Rota administrativa publicada em billing-api v23 e novo EXE de teste entregue; nenhum dado real preenchido automaticamente.

@@ -133,7 +133,7 @@ class BillingDialog(QDialog):
         )
         profile_layout = QVBoxLayout(profile_card)
         profile_layout.setContentsMargins(18, 16, 18, 16)
-        profile_title = QLabel("Dados para emissão do PIX ou boleto")
+        profile_title = QLabel("Dados de cobrança e emissão do PIX")
         profile_title.setStyleSheet("font-size:16px;font-weight:800;border:none;")
         profile_layout.addWidget(profile_title)
         form = QFormLayout()
@@ -177,13 +177,11 @@ class BillingDialog(QDialog):
         payment_layout.addWidget(note)
         buttons = QHBoxLayout()
         self.pix_button = QPushButton("Gerar PIX")
-        self.boleto_button = QPushButton("Gerar boleto")
-        for button, color in ((self.pix_button, "#059669"), (self.boleto_button, "#D97706")):
+        for button, color in ((self.pix_button, "#059669"),):
             button.setMinimumHeight(46)
             button.setStyleSheet(self._button(color))
             buttons.addWidget(button)
         self.pix_button.clicked.connect(lambda: self._create_payment("pix"))
-        self.boleto_button.clicked.connect(lambda: self._create_payment("boleto"))
         payment_layout.addLayout(buttons)
         self.result = QLabel("Nenhuma cobrança foi gerada nesta tela.")
         self.result.setWordWrap(True)
@@ -265,8 +263,8 @@ class BillingDialog(QDialog):
     def _set_busy(self, busy):
         owner = self.role == "owner"
         self.save_button.setDisabled(busy or not owner)
-        self.pix_button.setDisabled(busy or not owner or self._reconciliation_required)
-        self.boleto_button.setDisabled(busy or not owner or self._reconciliation_required)
+        self.pix_button.setDisabled(busy or not owner or self._reconciliation_required
+                                    or getattr(self, "_pending_admin_boleto", False))
         self.copy_button.setDisabled(busy or not self._payment_code())
         self.open_button.setDisabled(busy or not self._payment_url())
         self.check_status_button.setDisabled(busy or not owner or not self._status_attempt_id)
@@ -317,7 +315,7 @@ class BillingDialog(QDialog):
         self._payment_environment = environment
         if environment == "test":
             self.environment_banner.setText(
-                "AMBIENTE DE TESTE — PIX e boleto são simulados e não movimentam dinheiro real."
+                "AMBIENTE DE TESTE — os pagamentos PIX são simulados e não movimentam dinheiro real."
             )
             self.environment_banner.setStyleSheet(
                 "background:#FFF7ED;border:2px solid #F97316;border-radius:10px;"
@@ -325,7 +323,7 @@ class BillingDialog(QDialog):
             )
         else:
             self.environment_banner.setText(
-                "AMBIENTE DE PRODUÇÃO — PIX e boleto gerados nesta tela são cobranças reais."
+                "AMBIENTE DE PRODUÇÃO — os pagamentos PIX gerados nesta tela são cobranças reais."
             )
             self.environment_banner.setStyleSheet(
                 "background:#ECFDF5;border:2px solid #10B981;border-radius:10px;"
@@ -374,6 +372,9 @@ class BillingDialog(QDialog):
         )
 
     def _create_payment(self, method):
+        if method != "pix":
+            self.result.setText("A emissão de boleto é feita somente pela administração.")
+            return
         if self._task:
             return
         self._clear_payment()
@@ -399,6 +400,23 @@ class BillingDialog(QDialog):
                 raise ValueError("INVALID_INVOICE_AMOUNT")
         except (InvalidOperation, TypeError):
             raise ValueError("INVALID_INVOICE_AMOUNT")
+        if attempt.get("payment_method") == "boleto":
+            # Mantém a consulta de confirmação de uma cobrança já emitida,
+            # sem disponibilizar linha digitável ou link no aplicativo.
+            self._last_attempt = {key: attempt[key] for key in
+                                  ("id", "payment_method", "status", "expires_at") if key in attempt}
+            self._pending_admin_boleto = (invoice.get("status", "open") == "open"
+                                          and attempt.get("status", "pending") == "pending")
+            if self._pending_admin_boleto:
+                self.result.setText("Existe um boleto pendente para esta fatura. "
+                                    "A emissão e o envio são feitos pela administração. "
+                                    "Entre em contato com o suporte antes de gerar outro pagamento.")
+                self.pix_button.setDisabled(True)
+                if attempt.get("id"):
+                    self._refresh_timer.start()
+            else:
+                self.result.setText(self._unavailable_payment_message(invoice, attempt))
+            return
         if invoice.get("status", "open") != "open" or not self._attempt_payable(attempt):
             self.result.setText(self._unavailable_payment_message(invoice, attempt))
             return
@@ -406,27 +424,18 @@ class BillingDialog(QDialog):
         self._last_attempt["invoice_id"] = invoice.get("id")
         self.amount_value.setText(self._money(value))
         self.pix_button.setText("Gerar PIX")
-        method = "PIX" if attempt.get("payment_method") == "pix" else "boleto"
+        method = "PIX"
         amount = self._money(invoice.get("total_amount"))
         reused_text = " A tentativa existente foi reaproveitada com segurança." if reused else ""
         environment_text = (
             "AMBIENTE DE TESTE — esta cobrança não movimenta dinheiro real.\n"
             if attempt_environment == "test" else ""
         )
-        boleto_test_note = (
-            "\nA linha digitável foi recebida. A página externa do sandbox pode não ser exibida; "
-            "isso não invalida a criação do boleto de teste."
-            if method == "boleto" and attempt_environment == "test" else ""
-        )
         self.result.setText(
             f"{environment_text}{method} da fatura no valor de {amount} gerado."
             f"{reused_text}\nO acesso será renovado somente após a confirmação do Mercado Pago."
-            f"{boleto_test_note}"
         )
-        if method == "boleto":
-            self.copy_button.setText("Copiar linha digitável")
-            self.open_button.setText("Abrir boleto no Mercado Pago")
-        self._show_pix_qr(self._payment_code() if method == "PIX" else "")
+        self._show_pix_qr(self._payment_code())
         self._refresh_timer.start()
 
     @staticmethod
@@ -463,6 +472,7 @@ class BillingDialog(QDialog):
 
     def _clear_payment(self):
         self._last_attempt = {}
+        self._pending_admin_boleto = False
         self._show_pix_qr("")
         self.copy_button.setText("Copiar código")
         self.open_button.setText("Abrir pagamento")
@@ -564,11 +574,13 @@ class BillingDialog(QDialog):
         self.qr_label.setVisible(True)
 
     def _payment_code(self):
-        if not self._attempt_payable(self._last_attempt):
+        if self._last_attempt.get("payment_method") != "pix" or not self._attempt_payable(self._last_attempt):
             return ""
-        return str(self._last_attempt.get("pix_copy_paste") or self._last_attempt.get("boleto_barcode") or "")
+        return str(self._last_attempt.get("pix_copy_paste") or "")
 
     def _payment_url(self):
+        if self._last_attempt.get("payment_method") != "pix":
+            return ""
         url = str(self._last_attempt.get("payment_url") or "")
         return url if self._attempt_payable(self._last_attempt) and QUrl(url).scheme() == "https" else ""
 
@@ -585,6 +597,7 @@ class BillingDialog(QDialog):
 
     def _show_error(self, error):
         messages = {
+            "BOLETO_ADMIN_ONLY": "A emissão de boleto é feita somente pela administração. Use PIX ou contate o suporte.",
             "PAYMENT_RECONCILIATION_REQUIRED": "Um pagamento precisa de conferência. Não pague novamente; contate o suporte.",
             "PAYMENT_REPRICE_CANCELLATION_FAILED": "O cancelamento da cobrança anterior ainda não foi confirmado. Aguarde e tente novamente.",
             "PAYMENT_METHOD_ALREADY_PENDING": "Já existe uma cobrança em outro meio de pagamento. Conclua ou cancele a anterior antes de trocar.",

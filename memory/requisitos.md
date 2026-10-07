@@ -31,7 +31,7 @@
 20. Permitir usuários proprietário, administrador e operador com autorização no servidor.
 21. Permitir um computador principal e computadores adicionais vinculados por código descartável.
 22. Consolidar a cobrança da empresa em R$ 300,00 pelo primeiro computador e R$ 50,00 por adicional, salvo preço personalizado.
-23. Permitir pagamento consolidado por PIX ou boleto e liberar somente após confirmação do provedor.
+23. Permitir pagamento consolidado somente por PIX no Desktop do cliente; emissão, cópia e abertura de boleto ficam exclusivamente no Gerador Admin por empresa (decisão de 07/10/2026). Liberar somente após confirmação do provedor e não permitir PIX e boleto pendentes simultaneamente para a mesma fatura.
 24. Permitir bloqueio imediato, remoção programada e transferência controlada da máquina principal.
 25. Recuperar senha por e-mail verificado sem revelar se uma conta existe e sem expor senhas ao suporte.
 26. Confirmar alterações empresariais sensíveis pelo código OTP enviado ao e-mail do usuário, sem exigir aplicativo autenticador no Desktop; manter TOTP nas mutações do Gerador Admin.

@@ -24,6 +24,7 @@ const context = createContext({
       assert.equal(name, 'claim_payment_status_check_server');
       if (mode === 'recovery-throttle') return { data: { ok:false, error:'PAYMENT_RATE_LIMITED' } };
       return { data: { ok:true, provider_id:'123456', payment_method:'pix',
+        provider_environment: 'production', provider_resource_type: 'payment',
         external_reference: mode === 'recovery-identity' ? 'different-attempt' : 'fixture-attempt' } };
     } } };
   },
@@ -31,7 +32,9 @@ const context = createContext({
     assert.equal(options.ownerOnly, true);
     if (mode === 'recovery-forbidden') throw new Error('OWNER_REQUIRED');
   },
-  serviceClient: () => ({ rpc: async (name, args) => {
+  serviceClient: () => ({ from: () => ({ select() { return this; }, eq() { return this; },
+    async maybeSingle() { return { data: { provider_environment: 'production', provider_resource_type: 'payment' } }; } }),
+    rpc: async (name, args) => {
     writes.push({ name, args });
     if (mode === 'database-error') return { error: new Error('synthetic failure') };
     if (mode === 'mismatch') return { data: { ok: false, error: 'AMOUNT_MISMATCH' } };

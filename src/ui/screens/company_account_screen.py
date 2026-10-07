@@ -239,7 +239,7 @@ class CompanyAccountScreen(QWidget):
 
         billing_card = self._section(
             "Cobrança consolidada",
-            "Atualize os dados fiscais e escolha PIX ou boleto para a fatura empresarial.",
+            "Atualize os dados de cobrança e pague a fatura empresarial por PIX.",
         )
         billing_layout = billing_card.layout()
         self.billing_button = QPushButton("Abrir cobrança e pagamentos")

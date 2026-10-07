@@ -41,7 +41,7 @@ class DashboardComparativoScreen(QWidget):
             if valor is None or pd.isna(valor):
                 return "SEM_NOTA", None
             nota = float(str(valor).strip().replace(',', '.'))
-            if nota < 0 or nota > 10:
+            if not 0 <= nota <= 10:
                 return "SEM_NOTA", None
         except (TypeError, ValueError):
             return "SEM_NOTA", None
@@ -602,14 +602,39 @@ class DashboardComparativoScreen(QWidget):
         nps_score = ((promotores - detratores) / total_nps * 100) if total_nps else 0.0
         sem_nota_count = total_respostas - total_nps
 
-        # Top2Box Geral
-        col_geral = 'Avaliação satisfação geral'
+        # O Top2Box oficial do TSI é uma nota própria (0–100), não a
+        # classificação 9/10 da pergunta isolada de satisfação geral.
+        col_top2box = 'Nota Top2Box' if 'Nota Top2Box' in df.columns else next((
+            c for c in df.columns
+            if 'nota top2box' in self.engine_tsi._normalizar_rotulo(c)
+        ), None)
+        colunas_mestre_top2box = [
+            'Avaliação satisfação instalações e infra',
+            'Avaliação satisfação consultor',
+            'Avaliação satisfação qualidade',
+            'Avaliação satisfação entrega',
+            'Avaliação satisfação custo benefício'
+        ]
+
         def calcular_top2box_grupo(grupo):
-            if col_geral not in grupo.columns:
+            # Prioriza o índice por pesquisa informado pelo próprio MyHonda.
+            notas_oficiais = serie_numerica(grupo, col_top2box).dropna()
+            notas_oficiais = notas_oficiais[notas_oficiais.between(0, 100)]
+            if len(notas_oficiais):
+                return float(notas_oficiais.mean())
+
+            # Bases antigas podem não conter a coluna oficial. Nelas, calcula
+            # somente a partir dos cinco pilares mestre do TSI.
+            notas_mestre = [
+                serie_numerica(grupo, col).dropna()
+                for col in colunas_mestre_top2box if col in grupo.columns
+            ]
+            notas_mestre = [notas for notas in notas_mestre if len(notas)]
+            if not notas_mestre:
                 return 0.0
-            notas = serie_numerica(grupo, col_geral).dropna()
-            notas = notas[notas.between(0, 10)]
-            return float((notas >= 9).sum() / len(notas) * 100) if len(notas) else 0.0
+            todas_notas = pd.concat(notas_mestre, ignore_index=True)
+            todas_notas = todas_notas[todas_notas.between(0, 10)]
+            return float((todas_notas >= 9).mean() * 100) if len(todas_notas) else 0.0
 
         top2box = calcular_top2box_grupo(df)
 
@@ -683,12 +708,7 @@ class DashboardComparativoScreen(QWidget):
                 if str(cons_nome).strip().lower() in ['', 'nan', 'não identificado', 'nao identificado', 'desconhecido']: continue
                 c_total = len(group)
                 c_tsi = calcular_tsi_grupo(group)
-                if col_geral and col_geral in group.columns:
-                    c_g = serie_numerica(group, col_geral).dropna()
-                    c_g = c_g[c_g.between(0, 10)]
-                    c_top = (c_g >= 9).sum() / len(c_g) * 100 if len(c_g) > 0 else 0.0
-                else:
-                    c_top = 0.0
+                c_top = calcular_top2box_grupo(group)
                 c_pilares = {}
                 c_pilares_contagens = {}
                 for pilar_nome, pilar_col in dim_map.items():

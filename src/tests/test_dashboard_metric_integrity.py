@@ -38,6 +38,23 @@ class _TsiScreen:
 
 
 class DashboardMetricIntegrityTests(unittest.TestCase):
+    def test_non_finite_recommendation_does_not_crash_ssi_report(self):
+        for value in ('NaN', 'nan', 'Infinity', '-Infinity', float('nan')):
+            with self.subTest(value=value):
+                self.assertEqual(DashboardComparativoScreen._classificar_recomendacao(value), ('SEM_NOTA', None))
+        screen = _TsiScreen()
+        screen.df_ssi = pd.DataFrame({
+            'Recomendaria dealer amigo e familia moto': ['NaN', 'nan', 10],
+        })
+        screen.combo_loja = _Combo('Todas as Unidades')
+        screen.combo_mes = _Combo('Todos')
+        screen.combo_consultor = _Combo('Todos')
+        screen.db = _Database()
+        metrics, _, _, _, responses = DashboardComparativoScreen._calcular_metricas_ssi(screen)
+        self.assertEqual(metrics['sem_nota_count'], 2)
+        self.assertEqual(metrics['promotores_count'], 1)
+        self.assertEqual([row['status'] for row in responses], ['SEM_NOTA', 'SEM_NOTA', 'PROMOTOR'])
+
     def test_missing_recommendation_is_not_a_detractor(self):
         screen = _TsiScreen()
         screen.df_tsi = pd.DataFrame({

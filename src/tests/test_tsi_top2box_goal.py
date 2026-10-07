@@ -61,6 +61,32 @@ class Top2BoxGoalTests(unittest.TestCase):
         self.assertEqual(self.metrics(frame)['top2box_global'], 75)
         self.assertEqual(self.metrics(frame)['pesquisas_recuperacao'], 2)
 
+    def test_manager_metrics_use_official_top2box_in_every_breakdown(self):
+        # Caso observado: satisfação geral 7, TSI 82 e Top2Box oficial 20.
+        row = {
+            'Data de Resposta': '01/10/2026 10:00', 'Mes': '10/2026',
+            'Loja_Nome': 'Ipê Bacabal', 'Categoria Produto': 'Baixa',
+            'Consultor_Nome': 'Consultor A', 'Nota Pesquisa TSI': '82,00',
+            'Nota Top2Box': '20,00', 'Avaliação satisfação geral': 7,
+            'Recomendaria dealer amigo e família': 8,
+        }
+        fake = SimpleNamespace(
+            df_tsi=pd.DataFrame([row]),
+            combo_loja=SimpleNamespace(currentText=lambda: 'Todas as Unidades'),
+            combo_mes=SimpleNamespace(currentText=lambda: '10/2026'),
+            combo_consultor=SimpleNamespace(currentText=lambda: 'Todos'),
+            sent_surveys=set(),
+            db=SimpleNamespace(get_leads_mapping=lambda: {}, find_lead=lambda *args, **kwargs: None),
+            engine_tsi=SimpleNamespace(_normalizar_rotulo=lambda value: str(value).lower()),
+            _calcular_participacao_whatsapp=lambda df, tipo: (0, 0.0),
+        )
+        metrics, ranking, _, _ = DashboardComparativoScreen._calcular_metricas_tsi(fake)
+        self.assertEqual(metrics['tsi'], 82.0)
+        self.assertEqual(metrics['top2box'], 20.0)
+        self.assertEqual(metrics['distribuicao_lojas'][0]['top2box'], 20.0)
+        self.assertEqual(metrics['distribuicao_segmentos'][0]['top2box'], 20.0)
+        self.assertEqual(ranking[0]['media'], 20.0)
+
     def renderer(self):
         fake = SimpleNamespace()
         fake._filtrar_respostas_por_estado = MethodType(

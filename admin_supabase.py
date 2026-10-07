@@ -117,6 +117,14 @@ class AdminSupabaseClient:
             "POST", "/functions/v1/admin-api", {"action": action, **payload}, token=token
         )
 
+    def billing_request(self, token: str, action: str, **payload) -> Dict[str, Any]:
+        if action not in {"admin_billing_summary", "admin_create_boleto", "admin_refresh_payment_status",
+                          "admin_save_billing_profile"}:
+            raise ValueError("Ação de cobrança administrativa inválida")
+        return self._request(
+            "POST", "/functions/v1/billing-api", {"action": action, **payload}, token=token
+        )
+
     def issue_migration_claim(self, token: str, hardware_id: str) -> Dict[str, Any]:
         return self.admin_request(
             token, "issue_migration_claim", hardware_id=str(hardware_id).strip()
@@ -141,6 +149,11 @@ def friendly_auth_error(error: Exception) -> str:
     if error.status == 428:
         return "A verificação em duas etapas é obrigatória."
     messages = {
+        "BILLING_OWNER_REQUIRED": "Esta empresa precisa ter um titular ativo antes da emissão do boleto.",
+        "BILLING_PROFILE_REQUIRED": "Cadastre os dados do pagador em Dados de cobrança antes de emitir o boleto.",
+        "INVALID_BILLING_PROFILE": "Confira nome/razão social, CPF ou CNPJ, e-mail, CEP e endereço do pagador.",
+        "PAYMENT_METHOD_ALREADY_PENDING": "Já existe um PIX pendente para esta fatura. Consulte a cobrança antes de emitir boleto.",
+        "PAYMENT_RECONCILIATION_REQUIRED": "Há um pagamento em conferência. Regularize a cobrança antes de gerar outra.",
         "REFUND_NOT_CONFIRMED": "O Mercado Pago ainda não confirmou o reembolso integral. A pendência foi preservada.",
         "RECONCILIATION_NOT_PENDING": "Esta pendência já foi resolvida ou não foi encontrada. Atualize a lista.",
         "ENTERPRISE_BILLING_MANAGED": "Altere preço e vigência em Por empresa → Editar assinatura. Nesta tela ajuste somente envios e comunicação.",

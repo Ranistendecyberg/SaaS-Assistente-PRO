@@ -110,11 +110,11 @@ class BillingDialogTests(unittest.TestCase):
         self.addCleanup(dialog.close)
         return dialog
 
-    def test_owner_can_edit_profile_and_choose_pix_or_boleto(self):
+    def test_owner_can_edit_profile_and_choose_only_pix(self):
         dialog = self.create_dialog("owner")
         self.assertTrue(dialog.save_button.isEnabled())
         self.assertTrue(dialog.pix_button.isEnabled())
-        self.assertTrue(dialog.boleto_button.isEnabled())
+        self.assertFalse(hasattr(dialog, "boleto_button"))
         self.assertEqual(set(dialog.fields), {
             "legal_name", "billing_cnpj", "billing_email", "postal_code",
             "street", "street_number", "address_extra", "neighborhood",
@@ -125,7 +125,7 @@ class BillingDialogTests(unittest.TestCase):
         dialog = self.create_dialog("admin")
         self.assertFalse(dialog.save_button.isEnabled())
         self.assertFalse(dialog.pix_button.isEnabled())
-        self.assertFalse(dialog.boleto_button.isEnabled())
+        self.assertFalse(hasattr(dialog, "boleto_button"))
 
     def test_pending_attempt_exposes_only_provider_payment_data(self):
         dialog = self.create_dialog("owner")
@@ -174,7 +174,7 @@ class BillingDialogTests(unittest.TestCase):
         self.assertIn("AMBIENTE DE TESTE", dialog.result.text())
         self.assertIn("não movimenta dinheiro real", dialog.result.text())
 
-    def test_test_boleto_explains_sandbox_and_labels_actions(self):
+    def test_admin_boleto_is_not_exposed_and_blocks_duplicate_pix(self):
         dialog = self.create_dialog("owner")
         dialog._loaded({"payment_environment": "test", "invoices": []})
         dialog._show_attempt(
@@ -187,10 +187,19 @@ class BillingDialogTests(unittest.TestCase):
                 "payment_url": "https://example.test/boleto",
             },
         )
-        self.assertIn("linha digitável foi recebida", dialog.result.text())
-        self.assertIn("sandbox", dialog.result.text())
-        self.assertEqual(dialog.copy_button.text(), "Copiar linha digitável")
-        self.assertEqual(dialog.open_button.text(), "Abrir boleto no Mercado Pago")
+        self.assertIn("administração", dialog.result.text())
+        self.assertEqual(dialog._payment_code(), "")
+        self.assertEqual(dialog._payment_url(), "")
+        dialog._set_busy(False)
+        self.assertFalse(dialog.pix_button.isEnabled())
+        self.assertFalse(dialog.copy_button.isEnabled())
+        self.assertFalse(dialog.open_button.isEnabled())
+
+    def test_desktop_does_not_request_boleto(self):
+        dialog = self.create_dialog()
+        dialog._create_payment("boleto")
+        dialog.auth.create_company_payment.assert_not_called()
+        self.assertIn("administração", dialog.result.text())
 
     def test_production_environment_warns_that_charge_is_real(self):
         dialog = self.create_dialog("owner")
@@ -264,7 +273,7 @@ class BillingDialogTests(unittest.TestCase):
         dialog._loaded({"payment_environment": "production", "reconciliation_required": True})
         dialog._set_busy(False)
         self.assertFalse(dialog.pix_button.isEnabled())
-        self.assertFalse(dialog.boleto_button.isEnabled())
+        self.assertFalse(hasattr(dialog, "boleto_button"))
         self.assertIn("Não pague novamente", dialog.result.text())
 
     def test_payment_link_rejects_local_and_unencrypted_urls(self):

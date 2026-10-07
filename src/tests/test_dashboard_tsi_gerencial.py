@@ -87,6 +87,7 @@ def test_distribuicao_top2box_por_loja_e_segmento_respeita_filtro():
         _registro('3', 'Cliente C', 'Outro', '90,00', 10),
     ]
     registros[1]['Avaliação satisfação geral'] = 8
+    registros[1]['Nota Top2Box'] = '0,00'
     registros[2]['Loja_Nome'] = 'Loja Lago'
     registros[2]['Categoria Produto'] = 'Scooter'
     tela.df_tsi = pd.DataFrame(registros)
@@ -107,3 +108,26 @@ def test_distribuicao_top2box_por_loja_e_segmento_respeita_filtro():
         {'nome': 'Baixa', 'respostas': 2, 'tsi': 97.0, 'top2box': 50.0},
         {'nome': 'Scooter', 'respostas': 1, 'tsi': 90.0, 'top2box': 100.0},
     ]
+
+
+def test_top2box_gerencial_usa_nota_oficial_e_nao_satisfacao_geral():
+    tela = _TelaFake()
+    registro = _registro('1', 'Cliente A', 'Rita', '82,00', 10)
+    registro['Nota Top2Box'] = '20,00'
+    registro['Avaliação satisfação geral'] = 7
+    registro['Recomendaria dealer amigo e família'] = 8
+    tela.df_tsi = pd.DataFrame([registro])
+    tela.combo_loja = _Combo('Todas as Unidades')
+    tela.combo_mes = _Combo('08/2026')
+    tela.combo_consultor = _Combo('Todos')
+    tela.sent_surveys = set()
+    tela.db = _DbFake()
+    tela.engine_tsi = SimpleNamespace(_normalizar_rotulo=lambda valor: str(valor).lower())
+
+    metricas, ranking, _, _ = DashboardComparativoScreen._calcular_metricas_tsi(tela)
+
+    assert metricas['tsi'] == 82.0
+    assert metricas['top2box'] == 20.0
+    assert metricas['distribuicao_lojas'][0]['top2box'] == 20.0
+    assert metricas['distribuicao_segmentos'][0]['top2box'] == 20.0
+    assert ranking[0]['media'] == 20.0

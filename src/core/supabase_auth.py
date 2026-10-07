@@ -525,6 +525,8 @@ class SupabaseUserClient:
         })
 
     def create_company_payment(self, company_id: str, payment_method: str) -> Dict[str, Any]:
+        if str(payment_method).strip().lower() != "pix":
+            raise ValueError("BOLETO_ADMIN_ONLY")
         return self.billing_request("create_payment", {
             "company_id": str(company_id).strip(),
             "payment_method": str(payment_method).strip().lower(),
