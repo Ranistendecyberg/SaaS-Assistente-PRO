@@ -38,6 +38,25 @@ class _TsiScreen:
 
 
 class DashboardMetricIntegrityTests(unittest.TestCase):
+    def test_invalid_store_meta_does_not_break_dashboard_index_build(self):
+        engine = DashboardEngine.__new__(DashboardEngine)
+        engine.config = {
+            "lojas": [
+                {"codigo": "blank", "nome": "Loja vazia", "meta_tsi": ""},
+                {"codigo": "invalid", "nome": "Loja inválida", "meta_tsi": "não informado"},
+                {"codigo": "nan", "nome": "Loja não finita", "meta_tsi": "NaN"},
+                {"codigo": "valid", "nome": "Loja válida", "meta_tsi": "82.5"},
+            ],
+            "consultores": [],
+        }
+
+        engine._rebuild_indexes()
+
+        self.assertEqual(engine._get_loja_nome_meta("blank"), ("Loja vazia", 0.0))
+        self.assertEqual(engine._get_loja_nome_meta("invalid"), ("Loja inválida", 0.0))
+        self.assertEqual(engine._get_loja_nome_meta("nan"), ("Loja não finita", 0.0))
+        self.assertEqual(engine._get_loja_nome_meta("valid"), ("Loja válida", 82.5))
+
     def test_non_finite_recommendation_does_not_crash_ssi_report(self):
         for value in ('NaN', 'nan', 'Infinity', '-Infinity', float('nan')):
             with self.subTest(value=value):

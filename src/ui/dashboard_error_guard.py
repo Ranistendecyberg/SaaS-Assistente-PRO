@@ -8,7 +8,7 @@ import os
 import traceback
 
 
-def _record_dashboard_error(screen, action, error):
+def record_dashboard_error(screen, action, error):
     diagnostic_id = datetime.now().strftime("%Y%m%d%H%M%S%f")[-10:]
     try:
         from src.core.paths import get_base_dir
@@ -41,7 +41,7 @@ def protect_dashboard_action(action):
             try:
                 return function(self, *args, **kwargs)
             except Exception as error:
-                diagnostic_id = _record_dashboard_error(
+                diagnostic_id = record_dashboard_error(
                     type(self).__name__, action, error,
                 )
                 if hasattr(self, "_is_loading_filters"):

@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import re
 import unicodedata
 import pandas as pd
@@ -41,7 +42,14 @@ class DashboardEngine:
         lojas_index: dict = {}
         for loja in self.config.get("lojas", []):
             nome = loja.get("nome", "")
-            meta = float(loja.get("meta_tsi", 0))
+            try:
+                meta = float(loja.get("meta_tsi") or 0)
+                if not math.isfinite(meta):
+                    meta = 0.0
+            except (TypeError, ValueError):
+                # Configuração antiga ou editada manualmente pode conter meta vazia.
+                # Uma meta inválida não deve impedir a abertura dos painéis.
+                meta = 0.0
             for field in ("cnpj", "codigo"):
                 key = str(loja.get(field, "")).strip()
                 if key:

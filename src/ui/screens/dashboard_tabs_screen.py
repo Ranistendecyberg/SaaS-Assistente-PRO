@@ -1,8 +1,9 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QLabel, QPushButton
 from PyQt6.QtCore import Qt
 from src.ui.screens.dashboard_screen import DashboardScreen
 from src.ui.screens.dashboard_ssi_screen import DashboardSSIScreen
 from src.ui.screens.dashboard_comparativo_screen import DashboardComparativoScreen
+from src.ui.dashboard_error_guard import record_dashboard_error
 
 class DashboardTabsScreen(QWidget):
     def __init__(self):
@@ -75,23 +76,51 @@ class DashboardTabsScreen(QWidget):
             self.on_tab_changed(self.tabs.currentIndex())
         
     def on_tab_changed(self, index):
-        if index == 0:
-            if self.dashboard_tsi is None:
-                self.dashboard_tsi = DashboardScreen()
-                self.layout_tsi.addWidget(self.dashboard_tsi)
-            else:
-                self.dashboard_tsi.carregar_dados()
-                
-        elif index == 1:
-            if self.dashboard_ssi is None:
-                self.dashboard_ssi = DashboardSSIScreen()
-                self.layout_ssi.addWidget(self.dashboard_ssi)
-            else:
-                self.dashboard_ssi.carregar_dados()
+        tabs = {
+            0: ("dashboard_tsi", self.layout_tsi, DashboardScreen),
+            1: ("dashboard_ssi", self.layout_ssi, DashboardSSIScreen),
+            2: ("dashboard_comparativo", self.layout_comparativo, DashboardComparativoScreen),
+        }
+        tab = tabs.get(index)
+        if tab is None:
+            return
 
-        elif index == 2:
-            if self.dashboard_comparativo is None:
-                self.dashboard_comparativo = DashboardComparativoScreen()
-                self.layout_comparativo.addWidget(self.dashboard_comparativo)
+        attribute, layout, screen_class = tab
+        try:
+            screen = getattr(self, attribute)
+            if screen is None:
+                screen = screen_class()
+                layout.addWidget(screen)
+                setattr(self, attribute, screen)
             else:
-                self.dashboard_comparativo.carregar_dados()
+                screen.carregar_dados()
+        except Exception as error:
+            diagnostic_id = record_dashboard_error(
+                type(self).__name__, f"criar_aba_{index}", error,
+            )
+            self._show_tab_error(layout, index, diagnostic_id)
+
+    @staticmethod
+    def _clear_layout(layout):
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def _show_tab_error(self, layout, index, diagnostic_id):
+        self._clear_layout(layout)
+        panel = QWidget()
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message = QLabel(
+            "Não foi possível abrir este painel. O restante do sistema continua disponível.\n"
+            f"Código de diagnóstico: {diagnostic_id}"
+        )
+        message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message.setWordWrap(True)
+        panel_layout.addWidget(message)
+        retry = QPushButton("Tentar carregar novamente")
+        retry.clicked.connect(lambda _checked=False, tab_index=index: self.on_tab_changed(tab_index))
+        panel_layout.addWidget(retry, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(panel)
