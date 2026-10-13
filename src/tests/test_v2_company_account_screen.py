@@ -87,7 +87,7 @@ class CompanyAccountScreenTests(unittest.TestCase):
         self.assertTrue(self.screen.transfer_principal_button.isEnabled())
 
     def test_company_banner_keeps_compact_height(self):
-        self.assertEqual(self.screen.banner.height(), 112)
+        self.assertLessEqual(self.screen.banner.height(), 80)
         self.assertEqual(
             self.screen.banner.sizePolicy().verticalPolicy(),
             QSizePolicy.Policy.Fixed,
@@ -130,13 +130,24 @@ class CompanyAccountScreenTests(unittest.TestCase):
         self.assertIn("Com o próximo computador: R$ 400,00/mês", hint)
         self.assertIn("+ R$ 50,00", hint)
 
-    def test_small_window_exposes_vertical_page_scroll_without_horizontal_scroll(self):
+    def test_compact_account_tabs_fit_without_page_scroll_and_billing_stays_visible(self):
         self.screen._render_summary(self.summary())
         self.screen.resize(900, 560)
         self.screen.show()
         self.app.processEvents()
-        self.assertGreater(self.screen.scroll_area.verticalScrollBar().maximum(), 0)
-        self.assertEqual(self.screen.scroll_area.horizontalScrollBar().maximum(), 0)
+        for index in range(self.screen.management_tabs.count()):
+            self.screen.management_tabs.setCurrentIndex(index)
+            self.app.processEvents()
+            self.assertEqual((self.screen.width(), self.screen.height()), (900, 560))
+            controls = ([self.screen.devices_table, self.screen.remove_button],
+                        [self.screen.units_table],
+                        [self.screen.unit_combo, self.screen.link_button, self.screen.copy_link_button])[index]
+            tab = self.screen.management_tabs.currentWidget()
+            for control in controls:
+                self.assertTrue(control.isVisible())
+                self.assertLessEqual(control.mapTo(tab, control.rect().bottomRight()).y(), tab.height())
+            self.assertTrue(self.screen.billing_button.isVisible())
+            self.assertLessEqual(self.screen.billing_button.mapTo(self.screen, self.screen.billing_button.rect().bottomRight()).y(), self.screen.height())
 
     def test_missing_session_opens_login_then_refreshes_account(self):
         self.auth.load_session.return_value = None

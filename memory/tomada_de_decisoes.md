@@ -156,3 +156,16 @@ Após a confirmação do usuário, o Desktop baixa o instalador por HTTPS, valid
 - Preparar publicação coordenada da função billing-api e dos pacotes Desktop/Admin; a alteração ainda está local. Não gerar cobranças reais para testes nem publicar automaticamente nesta rodada.
 - Atualização posterior em 07/10/2026: proprietário autorizou a publicação imediata da billing-api para habilitar o teste do Admin. Função v22 ativa; EXE Admin entregue reutilizado. A retirada visual do boleto do Desktop permanece para a próxima compilação. NF automática segue aguardando CNPJ; geração e envio de NF/boleto devem pertencer ao fluxo administrativo.
 - Fluxo completado após o teste retornar ausência de pagador: cadastrar e editar dados de cobrança também pelo Gerador Admin, com validação no servidor, MFA e auditoria. Não exigir que o cliente entre no Desktop para cadastrar o pagador antes do boleto. Rota administrativa publicada em billing-api v23 e novo EXE de teste entregue; nenhum dado real preenchido automaticamente.
+
+## 09/10/2026 — Densidade das telas empresariais
+
+- Organizar gestão empresarial em abas e manter o acesso à cobrança no rodapé, para que tabelas/códigos não alonguem a página inteira. Cobrança deve abrir diretamente no pagamento PIX, com dados de cobrança em aba própria e formulário de duas colunas. Validar encaixe em 900 × 560 sem cortar controles; preservar rolagem das listas e fallback de cadastro/pagamento quando a área útil for excepcionalmente pequena.
+
+## 13/10/2026 — Renovação após expiração
+
+- A tela de licença vencida deve direcionar para a autenticação da Conta Empresarial e a cobrança consolidada por PIX. Não deve chamar o endpoint individual legado `create_pix`. Depois de fechar a cobrança, reconsultar o status e permitir entrar somente quando o servidor confirmar a licença ativa.
+
+## 13/10/2026 — Diagnóstico de encerramento nos relatórios
+
+- Não foi possível atribuir os fechamentos relatados à causa já corrigida de NaN sem logs dos computadores afetados. Na 2.1.15, proteger operações Python de abertura, carga, filtros, atualização e exportação nos três painéis, preservar a janela principal em caso de exceção e registrar identificador técnico sem conteúdo das respostas.
+- Se houver novo relato, solicitar código diagnóstico e `app_data/dashboard_errors.log`; distinguir falha Python capturada de encerramento nativo/driver que não passa pelo guard.

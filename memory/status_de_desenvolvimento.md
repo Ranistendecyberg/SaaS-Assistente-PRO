@@ -940,3 +940,38 @@ Estabilizar e validar o Desktop de ponta a ponta: extração real, auditores, fi
 - Site público existente atualizado pelo fluxo Sites: fallback de download e chave de cache passam a 2.1.13; consulta automática ao GitHub Latest mantida. Fonte `871085f9b59e06d445d3bc58b383b4a99a1e7303`, versão Sites **13**, implantação `appgdep_6ac6a85f7fec819191957c240084367e`, estado nativo **succeeded** e URL https://saas-assistente-pro.berg-suportetr.chatgpt.site . Identidade e audiência públicas preservadas.
 - Acesso de rede do helper Sites precisou de execução fora do sandbox; credencial renovada após expiração. Build Vinext concluído com CLI nativa após falha do shim de gerenciador. Helper sincronizou/registrou o código, mas empacotamento dependia de bash indisponível; pacote preparado pelo script oficial `prepare-site-build.cjs` e tar nativo, com validação de estágio, entrypoint, manifesto e atribuição. Arquivo salvo e implantado pelo conector Sites.
 - Validação mantida: 269 testes aprovados, smoke test do EXE e instalador aprovado; arquivo remoto, metadados OTA e implantação Sites conferidos. Nenhuma atualização física do aplicativo de um cliente ou novo teste real de boleto/PIX/NF foi efetuado pelo agente durante este lançamento.
+
+## Erro de carregamento WhatsApp relatado — 09/10/2026
+
+- Proprietário enviou foto do navegador incorporado exibindo página genérica do WhatsApp `Sorry, something went wrong`. URL efetiva da página, versão instalada e funcionamento no Chrome ainda não informados; o print não permite concluir causa ou indisponibilidade geral.
+- Código conferido: entrada em `https://web.whatsapp.com/`, botão `Recarregar WhatsApp` ligado a `web_view.reload`, sessão persistente isolada em `app_data/whatsapp`. Identificador de navegador fixo Chrome/120 permanece no código; possível compatibilidade é hipótese, não causa confirmada.
+- Orientação inicial: suspender tentativas de envio enquanto a página não funcionar, recarregar pelo botão existente, reabrir o sistema se necessário e comparar com WhatsApp Web no Chrome atualizado no mesmo computador. Se apenas o navegador interno falhar, investigar sessão/navegação antes de qualquer recuperação de perfil.
+- Consultada ajuda oficial de conexão do WhatsApp: https://faq.whatsapp.com/852892549070029/?cms_platform=web . Sem acesso ao equipamento do cliente, limpeza de dados, alteração de User-Agent, envio de mensagens, recompilação ou nova publicação nesta rodada.
+
+## Conta Empresarial e cobrança compactas — 09/10/2026
+
+- Proprietário pediu reduzir rolagem nas duas telas. Implementação local: Conta Empresarial com cabeçalho/banner/indicadores menores e abas `Computadores`, `Unidades` e `Adicionar computador`. Removida a rolagem da página inteira; tabelas mantêm sua própria navegação para contas com muitos registros. Acesso `Abrir cobrança e pagamentos` permanece em rodapé visível em todas as abas.
+- BillingDialog abre na aba `Pagamento PIX`, com controles à esquerda e QR completo à direita. Aba `Dados de cobrança` contém os dez campos em duas colunas, rótulos acessíveis e botão de salvar. Reduzidos espaçamentos e cabeçalhos; diálogo respeita área útil do monitor. QR ajustado para 194 px dentro de caixa 220 px, preservando bordas e redimensionamento nearest-neighbor. Rolagem interna permanece como fallback para janelas excepcionalmente pequenas; não é necessária na dimensão validada.
+- 35 testes direcionados de conta/cobrança aprovados, incluindo dimensões reais 900 × 560, geometria dos controles de todas as abas e pagamento com QR sem rolagem. Prévia renderizada com fontes Windows e dados fictícios confirma conta completa, pagamento e cadastro sem corte/rolagem em 900 × 560. Prévias em `tmp/conta_empresarial_compacta.png`, `tmp/cobranca_pix_compacta.png` e `tmp/dados_cobranca_compactos.png`.
+- Alteração somente de apresentação: rotas, permissões, validações, valores, confirmação do provedor e operações financeiras preservados. Nenhum pagamento real emitido, código de vínculo gerado, cadastro alterado, novo EXE compilado ou publicação realizada nesta rodada. Público continua com o layout da 2.1.13 até futura compilação/publicação.
+
+## Candidata Desktop 2.1.14 com telas compactas — 09/10/2026
+
+- Proprietário autorizou gerar o EXE com o novo layout. Versão do código e instalador atualizadas para 2.1.14 pelo fluxo oficial; notas em `release_notes/release_notes_v2.1.14.md`.
+- Suíte completa: **270 testes unittest aprovados**, incluindo a geometria em 900 × 560 e os fluxos/permissões empresariais e de cobrança existentes.
+- `build_release.py 2.1.14` concluiu com Python 3.14.5 / PyInstaller 6.21.0 e Inno Setup 6.7.3. Assistente de atualização e EXE principal gerados; smoke test do próprio executável aprovado antes do instalador.
+- Instalador local `dist/Instalador_SaaS_Assistente_PRO_v2.1.14.exe`, **246.853.919 bytes**, SHA-256 `0f21697f0290128f9650358d53eb017f55c1e368e723fdbe1841a1c10e26d25c`. Versão do recurso 2.1.14, tamanho e hash conferidos contra `dist/release_v2.1.14.json`.
+- Pacote entregue para teste do proprietário; não instalado pelo agente. Versão anterior preservada. Nenhum commit/push, GitHub Release, OTA, site, backend ou cobrança real alterado nesta compilação. A publicação pública da 2.1.14 ainda aguarda autorização/homologação; o layout compacto não está distribuído aos clientes nesta etapa.
+
+## Acesso à cobrança com licença expirada — 13/10/2026
+
+- Cliente relatou que, após expirar o período, a tela inicial mostrava “Não foi possível gerar o PIX com segurança” e impedia chegar à Conta Empresarial. Causa identificada no código local: a tela de licença ainda chamava o endpoint legado de PIX individual (`create_pix`), embora a cobrança vigente seja empresarial e use `billing-api` com autenticação de usuário proprietário.
+- Alterada a ação da tela bloqueada para autenticar o usuário empresarial, permitir escolher a conta quando houver mais de uma associação, abrir o pagamento PIX consolidado e consultar novamente o status da licença após fechar a cobrança. O sistema só segue quando o servidor confirmar a licença ativa. A rota manual de PIX da janela principal também passa pela tela de status/renovação, sem emissão automática de PIX individual.
+- Correção apenas no código-fonte local; sem teste automatizado, build, pagamento real, atualização OTA, GitHub ou site. O EXE 2.1.14 já entregue para teste foi gerado antes desta correção e não a contém; é necessário gerar outro executável para disponibilizá-la ao cliente.
+
+## Correção de falhas nos painéis e candidata Desktop 2.1.15 — 13/10/2026
+
+- Proprietário relatou que usuários têm o aplicativo encerrado ao abrir Relatório/Dashboard; não havia log de cliente que permitisse confirmar a causa. Verificação anterior encontrou correção publicada na 2.1.13 para valores NaN na recomendação SSI, mas não evidência de que explique os novos relatos.
+- Adicionada proteção às rotinas de abertura, carregamento, atualização, filtro e exportação nos painéis TSI, SSI e Relatório Gerencial Geral. Exceções Python são registradas com código diagnóstico, localização/tipo técnico e sem dados da resposta; a tela exibe orientação e mantém o aplicativo disponível.
+- A 2.1.15 acumula também a rota de cobrança empresarial PIX após expiração e a compactação das telas empresariais anteriormente preparada na candidata local 2.1.14.
+- Build e publicação ainda pendentes nesta entrada; preencher com resultado real, hash/tamanho do instalador, validações e estado de GitHub, OTA e site após concluir.

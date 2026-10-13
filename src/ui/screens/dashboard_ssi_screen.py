@@ -8,6 +8,7 @@ from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from src.core.database import DatabaseManager
 from src.core.pdf_report_generator import PDFReportGenerator
+from src.ui.dashboard_error_guard import protect_dashboard_action
 from src.core.ssi_metrics import (
     calculate_percentage as calculate_ssi_percentage,
     numeric_series as ssi_numeric_series,
@@ -148,6 +149,7 @@ class DashboardSSIScreen(QWidget):
         self.web_view = QWebEngineView()
         layout.addWidget(self.web_view, stretch=1)
 
+    @protect_dashboard_action("showEvent")
     def showEvent(self, event):
         super().showEvent(event)
         if self.df.empty:
@@ -155,6 +157,7 @@ class DashboardSSIScreen(QWidget):
         else:
             self.atualizar_dashboard()
 
+    @protect_dashboard_action("carregar_dados")
     def carregar_dados(self):
         try:
             records = self.db.load_ssi_records()
@@ -314,6 +317,7 @@ class DashboardSSIScreen(QWidget):
         self._preencher_vendedores_contextuais()
         self.combo_consultor.blockSignals(False)
 
+    @protect_dashboard_action("_ao_mudar_filtros_base")
     def _ao_mudar_filtros_base(self, _valor=None):
         """Mantém vendedores limitados às respostas dos filtros selecionados."""
         if self.df.empty:
@@ -358,6 +362,7 @@ class DashboardSSIScreen(QWidget):
         self.combo_consultor.addItems(vendedores)
         self.combo_consultor.setCurrentText(selecionado if selecionado in vendedores else "Todos")
 
+    @protect_dashboard_action("atualizar_dashboard")
     def atualizar_dashboard(self):
         if self.df.empty:
             html_vazio = "<html><body><div style='padding:20px; font-family:sans-serif; color:#64748B;'>Nenhum dado encontrado para esses filtros.</div></body></html>"
@@ -1043,6 +1048,7 @@ class DashboardSSIScreen(QWidget):
             f.write(html)
         self.web_view.setHtml(html)
 
+    @protect_dashboard_action("exportar_pdf_executivo")
     def exportar_pdf_executivo(self):
         if self.df.empty:
             QMessageBox.warning(self, "Aviso", "Não há dados no banco SSI para gerar o relatório.")

@@ -18,6 +18,7 @@ from src.core.ssi_metrics import (
     raw_column as ssi_raw_column,
     recommendation_summary,
 )
+from src.ui.dashboard_error_guard import protect_dashboard_action
 
 class DashboardComparativoScreen(QWidget):
     """
@@ -223,20 +224,24 @@ class DashboardComparativoScreen(QWidget):
         self.web_view.setStyleSheet("background-color: transparent; border: 1px solid #CBD5E1; border-radius: 8px;")
         layout.addWidget(self.web_view, stretch=1)
 
+    @protect_dashboard_action("showEvent")
     def showEvent(self, event):
         super().showEvent(event)
         self.carregar_dados()
 
+    @protect_dashboard_action("ao_mudar_departamento")
     def ao_mudar_departamento(self):
         self.popular_filtros()
         self.atualizar_dashboard()
 
+    @protect_dashboard_action("ao_mudar_loja_ou_mes")
     def ao_mudar_loja_ou_mes(self, _valor=None):
         """No SSI, mantém a lista de vendedores sincronizada com loja e mês."""
         if self.combo_dept.currentIndex() == 1:
             self._atualizar_opcoes_consultor(self._recortar_consultores_ssi())
         self.atualizar_dashboard()
 
+    @protect_dashboard_action("carregar_dados")
     def carregar_dados(self):
         self.df_tsi = self.engine_tsi.load_data()
         self.records_ssi = self.db.load_ssi_records()
@@ -1234,6 +1239,7 @@ class DashboardComparativoScreen(QWidget):
                 
         return filtradas, filtro_desc
 
+    @protect_dashboard_action("atualizar_dashboard")
     def atualizar_dashboard(self):
         dept_idx = self.combo_dept.currentIndex()
         if dept_idx == 0:
@@ -2801,6 +2807,7 @@ class DashboardComparativoScreen(QWidget):
         </html>
         """
 
+    @protect_dashboard_action("exportar_pdf_executivo")
     def exportar_pdf_executivo(self):
         dept_idx = self.combo_dept.currentIndex()
         loja_nome = self.combo_loja.currentText()

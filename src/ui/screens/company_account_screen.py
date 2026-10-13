@@ -7,7 +7,7 @@ from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import (
     QComboBox, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
-    QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem,
+    QPushButton, QSizePolicy, QTableWidget, QTableWidgetItem, QTabWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -81,42 +81,25 @@ class CompanyAccountScreen(QWidget):
         viewport_layout.setContentsMargins(0, 0, 0, 0)
         viewport_layout.setSpacing(0)
 
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll_area.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self.scroll_area.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-        self.scroll_area.setStyleSheet(
-            "QScrollArea{background:#F4F7FB;border:none;}"
-            "QScrollBar:vertical{background:#E8EEF7;width:11px;margin:4px 2px;}"
-            "QScrollBar::handle:vertical{background:#94A3B8;border-radius:5px;min-height:36px;}"
-            "QScrollBar::handle:vertical:hover{background:#64748B;}"
-            "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}"
-        )
         page = QWidget()
         page.setStyleSheet(f"background:{self.COLORS['background']};")
         root = QVBoxLayout(page)
-        root.setContentsMargins(28, 24, 28, 28)
-        root.setSpacing(16)
-        self.scroll_area.setWidget(page)
-        viewport_layout.addWidget(self.scroll_area)
+        root.setContentsMargins(16, 12, 16, 12)
+        root.setSpacing(6)
+        viewport_layout.addWidget(page, 1)
 
         heading = QHBoxLayout()
         titles = QVBoxLayout()
         self.title = QLabel("Conta Empresarial")
-        self.title.setStyleSheet("font-size:28px;font-weight:800;color:#0F172A;")
+        self.title.setStyleSheet("font-size:22px;font-weight:800;color:#0F172A;")
         self.subtitle = QLabel("Empresa, unidades, computadores e cobrança consolidada")
         self.subtitle.setWordWrap(True)
         self.subtitle.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.subtitle.setStyleSheet("font-size:13px;color:#64748B;")
         titles.addWidget(self.title)
         titles.addWidget(self.subtitle)
-        heading.addLayout(titles)
-        heading.addStretch()
+        titles.setSpacing(2)
+        heading.addLayout(titles, 1)
         self.refresh_button = QPushButton("Atualizar dados")
         self.refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_button.setStyleSheet(self._button_style(self.COLORS["blue"]))
@@ -126,17 +109,17 @@ class CompanyAccountScreen(QWidget):
 
         self.banner = QFrame()
         self.banner.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.banner.setFixedHeight(112)
+        self.banner.setFixedHeight(68)
         self.banner.setStyleSheet("QFrame{background:#162B63;border-radius:16px;}")
         banner_layout = QHBoxLayout(self.banner)
-        banner_layout.setContentsMargins(22, 18, 22, 18)
+        banner_layout.setContentsMargins(14, 8, 14, 8)
         banner_text = QVBoxLayout()
         banner_text.setSpacing(4)
         banner_text.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.company_name = QLabel("Carregando conta empresarial...")
         self.company_name.setWordWrap(True)
         self.company_name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.company_name.setStyleSheet("font-size:22px;font-weight:800;color:white;")
+        self.company_name.setStyleSheet("font-size:18px;font-weight:800;color:white;")
         self.company_meta = QLabel("Conectando ao servidor seguro")
         self.company_meta.setWordWrap(True)
         self.company_meta.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -153,6 +136,7 @@ class CompanyAccountScreen(QWidget):
         root.addWidget(self.banner, 0)
 
         cards = QHBoxLayout()
+        cards.setSpacing(8)
         self.status_value, status_card = self._metric_card("ASSINATURA", "—", "Situação contratual")
         self.devices_value, devices_card = self._metric_card("COMPUTADORES", "—", "Principal e adicionais")
         self.price_value, price_card = self._metric_card("VALOR CONSOLIDADO", "—", "Estimativa mensal atual")
@@ -161,28 +145,29 @@ class CompanyAccountScreen(QWidget):
             cards.addWidget(card, 1)
         root.addLayout(cards)
 
-        content = QHBoxLayout()
-        content.setSpacing(16)
+        self.management_tabs = QTabWidget()
+        self.management_tabs.setStyleSheet(
+            "QTabWidget::pane{border:none;} QTabBar::tab{padding:7px 14px;color:#475569;}"
+            "QTabBar::tab:selected{color:#2563EB;background:white;font-weight:700;}"
+        )
+        root.addWidget(self.management_tabs, 1)
 
         units_card = self._section("Unidades e documentos", "Matriz e filiais autorizadas na conta")
         units_layout = units_card.layout()
         self.units_table = self._table(["Unidade", "Tipo", "CPF / CNPJ", "Status"])
-        self.units_table.setMinimumHeight(150)
+        self.units_table.setMinimumHeight(96)
         units_layout.addWidget(self.units_table)
-        content.addWidget(units_card, 5)
+        self.management_tabs.addTab(units_card, "Unidades")
 
         link_card = self._section(
             "Adicionar computador",
-            "Escolha a unidade e gere um código de ativação válido por 15 minutos.",
+            "Selecione a unidade. O código de ativação é válido por 15 minutos.",
         )
         link_layout = link_card.layout()
         self.unit_combo = QComboBox()
-        self.unit_combo.setMinimumHeight(42)
+        self.unit_combo.setMinimumHeight(32)
         self.unit_combo.setStyleSheet(self._field_style())
-        unit_prompt = QLabel("Unidade que utilizará o computador")
-        unit_prompt.setWordWrap(True)
-        unit_prompt.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        link_layout.addWidget(unit_prompt)
+        self.unit_combo.setAccessibleName("Unidade que utilizará o computador")
         link_layout.addWidget(self.unit_combo)
         self.link_price_hint = QLabel("O valor adicional será exibido após carregar a conta.")
         self.link_price_hint.setWordWrap(True)
@@ -190,7 +175,7 @@ class CompanyAccountScreen(QWidget):
         link_layout.addWidget(self.link_price_hint)
         self.link_button = QPushButton("Gerar código de ativação")
         self.link_button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        self.link_button.setMinimumHeight(44)
+        self.link_button.setMinimumHeight(32)
         self.link_button.setStyleSheet(self._button_style(self.COLORS["green"]))
         self.link_button.clicked.connect(self.issue_link_code)
         link_layout.addWidget(self.link_button)
@@ -199,24 +184,25 @@ class CompanyAccountScreen(QWidget):
         self.link_result.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.link_result.setStyleSheet(
             "background:#F8FAFC;border:1px dashed #CBD5E1;border-radius:10px;"
-            "padding:12px;color:#475569;font-size:12px;"
+            "padding:8px;color:#475569;font-size:12px;"
         )
-        link_layout.addWidget(self.link_result)
+        code_row = QHBoxLayout()
+        code_row.addWidget(self.link_result, 1)
         self.copy_link_button = QPushButton("Copiar código")
         self.copy_link_button.setStyleSheet(self._outline_button_style())
         self.copy_link_button.setEnabled(False)
         self.copy_link_button.clicked.connect(self._copy_link_code)
-        link_layout.addWidget(self.copy_link_button)
+        code_row.addWidget(self.copy_link_button)
+        link_layout.addLayout(code_row)
         link_layout.addStretch()
-        content.addWidget(link_card, 3)
-        root.addLayout(content, 3)
+        self.management_tabs.addTab(link_card, "Adicionar computador")
 
         devices_card = self._section("Computadores vinculados", "Selecione um adicional para programar ou cancelar a remoção")
         devices_layout = devices_card.layout()
         self.devices_table = self._table([
             "Computador", "Unidade", "Classe", "Situação", "Versão", "Último acesso",
         ])
-        self.devices_table.setMinimumHeight(150)
+        self.devices_table.setMinimumHeight(96)
         self.devices_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.devices_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         devices_layout.addWidget(self.devices_table)
@@ -235,19 +221,19 @@ class CompanyAccountScreen(QWidget):
         actions.addWidget(self.cancel_removal_button)
         actions.addWidget(self.remove_button)
         devices_layout.addLayout(actions)
-        root.addWidget(devices_card, 4)
+        self.management_tabs.insertTab(0, devices_card, "Computadores")
+        self.management_tabs.setCurrentIndex(0)
 
-        billing_card = self._section(
-            "Cobrança consolidada",
-            "Atualize os dados de cobrança e pague a fatura empresarial por PIX.",
-        )
-        billing_layout = billing_card.layout()
+        billing_card = QFrame()
+        billing_layout = QHBoxLayout(billing_card)
+        billing_layout.setContentsMargins(16, 8, 16, 8)
+        billing_layout.addWidget(QLabel("Cobrança consolidada por PIX"), 1)
         self.billing_button = QPushButton("Abrir cobrança e pagamentos")
-        self.billing_button.setMinimumHeight(46)
+        self.billing_button.setMinimumHeight(34)
         self.billing_button.setStyleSheet(self._button_style(self.COLORS["blue"]))
         self.billing_button.clicked.connect(self.open_billing)
         billing_layout.addWidget(self.billing_button)
-        root.addWidget(billing_card)
+        viewport_layout.addWidget(billing_card)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -274,12 +260,12 @@ class CompanyAccountScreen(QWidget):
         card = QFrame()
         card.setStyleSheet("QFrame{background:white;border:1px solid #D9E2EF;border-radius:14px;}")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
         label = QLabel(title)
         label.setWordWrap(True)
         label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        label.setStyleSheet("font-size:16px;font-weight:800;color:#0F172A;border:none;")
+        label.setStyleSheet("font-size:14px;font-weight:800;color:#0F172A;border:none;")
         description = QLabel(subtitle)
         description.setWordWrap(True)
         description.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -292,7 +278,8 @@ class CompanyAccountScreen(QWidget):
         card = QFrame()
         card.setStyleSheet("QFrame{background:white;border:1px solid #D9E2EF;border-radius:14px;}")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(2)
         caption = QLabel(label)
         caption.setWordWrap(True)
         caption.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -300,7 +287,7 @@ class CompanyAccountScreen(QWidget):
         amount = QLabel(value)
         amount.setWordWrap(True)
         amount.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        amount.setStyleSheet("font-size:22px;font-weight:800;color:#0F172A;border:none;")
+        amount.setStyleSheet("font-size:18px;font-weight:800;color:#0F172A;border:none;")
         detail = QLabel(hint)
         detail.setWordWrap(True)
         detail.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -331,14 +318,14 @@ class CompanyAccountScreen(QWidget):
     def _field_style():
         return (
             "QComboBox{background:white;border:1px solid #CBD5E1;border-radius:8px;"
-            "padding:8px;color:#0F172A;} QComboBox:focus{border:2px solid #2563EB;}"
+            "padding:5px;color:#0F172A;} QComboBox:focus{border:2px solid #2563EB;}"
         )
 
     @staticmethod
     def _button_style(color):
         return (
             f"QPushButton{{background:{color};color:white;border:none;border-radius:8px;"
-            "padding:10px 16px;font-weight:700;} QPushButton:hover{border:2px solid #BFDBFE;}"
+            "padding:7px 12px;font-weight:700;} QPushButton:hover{border:2px solid #BFDBFE;}"
             "QPushButton:disabled{background:#CBD5E1;color:#64748B;}"
         )
 
@@ -346,7 +333,7 @@ class CompanyAccountScreen(QWidget):
     def _outline_button_style():
         return (
             "QPushButton{background:white;color:#334155;border:1px solid #CBD5E1;"
-            "border-radius:8px;padding:10px 16px;font-weight:700;}"
+            "border-radius:8px;padding:7px 12px;font-weight:700;}"
             "QPushButton:hover{background:#F8FAFC;} QPushButton:disabled{color:#94A3B8;}"
         )
 

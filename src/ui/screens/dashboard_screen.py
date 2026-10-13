@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
 from src.core.dashboard_engine import DashboardEngine
 from src.core.pdf_report_generator import PDFReportGenerator
+from src.ui.dashboard_error_guard import protect_dashboard_action
 import urllib.parse
 import os
 
@@ -112,19 +113,23 @@ class DashboardScreen(QWidget):
         self.web_view.setStyleSheet("background-color: white; border: 1px solid #CBD5E1; border-radius: 8px;")
         layout.addWidget(self.web_view, stretch=1)
 
+    @protect_dashboard_action("forcar_recarga")
     def forcar_recarga(self):
         self.carregar_filtros()
         self.atualizar_dashboard()
 
+    @protect_dashboard_action("showEvent")
     def showEvent(self, event):
         super().showEvent(event)
         self.carregar_filtros()
         self.atualizar_dashboard()
 
+    @protect_dashboard_action("carregar_dados")
     def carregar_dados(self):
         self.carregar_filtros()
         self.atualizar_dashboard()
 
+    @protect_dashboard_action("carregar_filtros")
     def carregar_filtros(self):
         self._is_loading_filters = True
         # Recarregar df base do banco mais recente
@@ -182,6 +187,7 @@ class DashboardScreen(QWidget):
                     
         self._is_loading_filters = False
 
+    @protect_dashboard_action("atualizar_dashboard")
     def atualizar_dashboard(self):
         if self._is_loading_filters:
             return
@@ -1244,6 +1250,7 @@ class DashboardScreen(QWidget):
         """
         return html
 
+    @protect_dashboard_action("exportar_pdf_executivo")
     def exportar_pdf_executivo(self):
         if self.df_base.empty:
             QMessageBox.warning(self, "Aviso", "Não há dados no banco TSI para gerar o relatório.")

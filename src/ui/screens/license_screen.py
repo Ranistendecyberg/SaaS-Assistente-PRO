@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QPushButton, QLineEdit, QStackedWidget, QWidget, QMessageBox, QFrame)
+                             QPushButton, QLineEdit, QStackedWidget, QWidget, QMessageBox, QFrame,
+                             QInputDialog)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
 from PyQt6.QtGui import QGuiApplication, QPixmap, QImage
 from src.core.license_manager import LicenseManager
@@ -64,7 +65,7 @@ class LicenseScreen(QDialog):
         self.modo_startup = (modo is None)
         
         if modo == "pix":
-            self.buscar_status_silencioso(auto_gerar_pix=True)
+            self.verificar_status_inicial()
         elif modo == "chave":
             self.stack.setCurrentIndex(3)
             self.buscar_status_silencioso()
@@ -148,7 +149,8 @@ class LicenseScreen(QDialog):
         self.btn_pix = QPushButton("Consultar valor e gerar PIX")
         self.btn_pix.setStyleSheet("background-color: #10B981; color: white; padding: 15px; border-radius: 8px; font-weight: bold; font-size: 14px;")
         self.btn_pix.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_pix.clicked.connect(self.gerar_pix)
+        self.btn_pix.setText("Acessar Conta Empresarial para pagar por PIX")
+        self.btn_pix.clicked.connect(self.abrir_cobranca_empresarial)
         layout_blocked.addWidget(self.btn_pix)
         
         btn_chave = QPushButton("Tenho uma Chave de Ativação")
@@ -250,7 +252,7 @@ class LicenseScreen(QDialog):
             self.btn_continue.setFocus()
             return
         self.setFixedSize(560, 600)
-        self.btn_pix.setText("Consultar valor e gerar PIX")
+        self.btn_pix.setText("Acessar Conta Empresarial para pagar por PIX")
         aviso_reajuste = str(dados.get("aviso_reajuste") or "").strip()
         if aviso_reajuste:
             self.lbl_aviso_reajuste.setText(f"📢 {aviso_reajuste}")
@@ -289,7 +291,7 @@ class LicenseScreen(QDialog):
                 self.lbl_block.setText("Sua licença expirou.")
                 self.lbl_block.setStyleSheet("font-size: 18px; font-weight: bold; color: #EF4444;")
                 
-            self.btn_pix.setText("Consultar valor e gerar PIX")
+            self.btn_pix.setText("Acessar Conta Empresarial para pagar por PIX")
                 
             self.lbl_subtitle.setText(f"Máquina: {self.manager.get_hardware_id()}")
             
@@ -297,6 +299,99 @@ class LicenseScreen(QDialog):
                 self.gerar_pix()
             
         self.execute_async(task, on_done)
+
+    def abrir_cobranca_empresarial(self, checked=False):
+        """Abre a cobrança empresarial mesmo quando a licença bloqueia o app."""
+        if getattr(self, "_opening_business_billing", False):
+            return
+        self._opening_business_billing = True
+        self.btn_pix.setDisabled(True)
+
+        def finish():
+            self._opening_business_billing = False
+            self.btn_pix.setEnabled(True)
+
+        try:
+            from src.core.supabase_auth import SupabaseUserClient
+            from src.ui.screens.user_login_dialog import UserLoginDialog
+            from src.ui.screens.billing_dialog import BillingDialog
+            from src.core.supabase_desktop import friendly_desktop_error
+
+            auth = SupabaseUserClient()
+            if not auth.load_session():
+                login = UserLoginDialog(auth, self)
+                if login.exec() != QDialog.DialogCode.Accepted:
+                    finish()
+                    return
+
+            def load_memberships():
+                try:
+                    return auth.list_companies(), None
+                except Exception as error:
+                    return None, error
+
+            def memberships_loaded(response):
+                result, error = response
+                if error:
+                    membership_failed(error)
+                    return
+                memberships = list(result.get("memberships") or [])
+                if not memberships:
+                    QMessageBox.warning(
+                        self, "Conta empresarial",
+                        "Este acesso não está vinculado a uma conta empresarial. "
+                        "Entre com o e-mail do proprietário da conta para pagar a renovação.",
+                    )
+                    finish()
+                    return
+
+                labels = [
+                    "{} ({})".format(
+                        row.get("company_name") or row.get("name") or "Empresa",
+                        str(row.get("company_id") or "")[-6:],
+                    )
+                    for row in memberships
+                ]
+                selected = 0
+                if len(memberships) > 1:
+                    label, accepted = QInputDialog.getItem(
+                        self, "Selecionar empresa",
+                        "Qual conta empresarial deseja renovar?", labels, 0, False,
+                    )
+                    if not accepted:
+                        finish()
+                        return
+                    selected = labels.index(label)
+
+                membership = memberships[selected]
+                company_id = str(membership.get("company_id") or "").strip()
+                role = str(membership.get("role") or "")
+                if not company_id:
+                    QMessageBox.warning(
+                        self, "Conta empresarial",
+                        "O servidor não retornou a empresa vinculada a este usuário. Tente novamente ou contate o suporte.",
+                    )
+                    finish()
+                    return
+
+                try:
+                    BillingDialog(auth, company_id, role, self).exec()
+                finally:
+                    finish()
+                    # A renovação só libera o sistema depois de confirmada pelo servidor.
+                    self.verificar_status_inicial()
+
+            def membership_failed(error):
+                QMessageBox.warning(
+                    self, "Conta empresarial", friendly_desktop_error(error),
+                )
+                finish()
+
+            self.execute_async(load_memberships, memberships_loaded)
+        except Exception as error:
+            from src.core.supabase_desktop import friendly_desktop_error
+            QMessageBox.warning(self, "Conta empresarial", friendly_desktop_error(error))
+            finish()
 
     def gerar_pix(self, checked=False):
         if self._gerando_pix:

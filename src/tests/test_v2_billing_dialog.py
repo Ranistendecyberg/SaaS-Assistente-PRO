@@ -11,6 +11,23 @@ from src.ui.screens.billing_dialog import BillingDialog
 
 
 class BillingDialogTests(unittest.TestCase):
+    def test_pix_is_visible_without_scrolling_in_compact_window_with_qr(self):
+        dialog = self.create_dialog()
+        dialog.resize(900, 560)
+        dialog._loaded({'payment_environment': 'production', 'invoices': []})
+        dialog._show_attempt({'total_amount': '350.00'}, {
+            'payment_method': 'pix', 'provider_environment': 'production',
+            'pix_copy_paste': '000201TESTE', 'status': 'pending',
+        })
+        dialog.show()
+        self.app.processEvents()
+        self.assertEqual((dialog.width(), dialog.height()), (900, 560))
+        self.assertEqual(dialog.tabs.currentIndex(), 0)
+        self.assertTrue(dialog.pix_button.isVisible())
+        self.assertEqual(dialog.tabs.widget(0).verticalScrollBar().maximum(), 0)
+        for button in (dialog.pix_button, dialog.copy_button, dialog.open_button, dialog.check_status_button):
+            self.assertLessEqual(button.mapTo(dialog, button.rect().bottomRight()).y(), dialog.height())
+
     def test_provider_check_uses_attempt_then_reloads_summary(self):
         dialog = self.create_dialog()
         dialog._status_attempt_id = "attempt-1"

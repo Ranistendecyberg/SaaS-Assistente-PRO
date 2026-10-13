@@ -9,8 +9,8 @@ from PIL import Image
 from PyQt6.QtCore import QThread, QTimer, Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QGuiApplication, QPixmap
 from PyQt6.QtWidgets import (
-    QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QDialog, QGridLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from src.core.supabase_desktop import DesktopBackendError, friendly_desktop_error
@@ -63,8 +63,11 @@ class BillingDialog(QDialog):
         self._reconciliation_required = False
         self._payment_environment = ""
         self.setWindowTitle("Cobrança empresarial — SaaS Assistente PRO")
-        self.resize(760, 760)
-        self.setMinimumSize(620, 560)
+        self.setMinimumSize(560, 420)
+        screen = parent.screen() if parent is not None else QGuiApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else None
+        self.resize(min(940, available.width() - 40) if available else 940,
+                    min(640, available.height() - 60) if available else 640)
         self.setStyleSheet("QDialog{background:#F4F7FB;color:#0F172A;}")
         self._build_ui()
         self._refresh_timer = QTimer(self)
@@ -75,21 +78,16 @@ class BillingDialog(QDialog):
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(14)
+        layout.setContentsMargins(14, 12, 14, 10)
+        layout.setSpacing(8)
 
         title = QLabel("Cobrança consolidada")
-        title.setStyleSheet("font-size:26px;font-weight:800;color:#0F172A;")
+        title.setStyleSheet("font-size:22px;font-weight:800;color:#0F172A;")
         layout.addWidget(title)
         description = QLabel(
-            "Uma única fatura reúne o computador principal e os adicionais. "
-            "O acesso somente será renovado após a confirmação segura do Mercado Pago."
+            "Fatura do computador principal e adicionais. A renovação ocorre após confirmação do Mercado Pago."
         )
         description.setWordWrap(True)
         description.setStyleSheet("color:#64748B;font-size:13px;")
@@ -99,7 +97,7 @@ class BillingDialog(QDialog):
         self.environment_banner.setWordWrap(True)
         self.environment_banner.setStyleSheet(
             "background:#F1F5F9;border:1px solid #CBD5E1;border-radius:10px;"
-            "padding:12px;color:#475569;font-size:13px;font-weight:800;"
+            "padding:7px;color:#475569;font-size:11px;font-weight:800;"
         )
         layout.addWidget(self.environment_banner)
 
@@ -110,20 +108,27 @@ class BillingDialog(QDialog):
             "border-radius:12px;} QFrame#billingAmountCard QLabel{border:none;background:transparent;}"
         )
         amount_layout = QHBoxLayout(amount_card)
-        amount_layout.setContentsMargins(18, 14, 18, 14)
+        amount_layout.setContentsMargins(12, 8, 12, 8)
         amount_text = QVBoxLayout()
+        amount_text.setSpacing(2)
         amount_title = QLabel("Valor previsto da próxima fatura")
         amount_title.setStyleSheet("color:#475569;font-size:12px;font-weight:700;")
         self.amount_value = QLabel(self._money(self._estimated_amount))
-        self.amount_value.setStyleSheet("color:#0F172A;font-size:24px;font-weight:800;")
-        amount_hint = QLabel("O valor definitivo será confirmado pelo servidor ao gerar o pagamento.")
+        self.amount_value.setStyleSheet("color:#0F172A;font-size:22px;font-weight:800;")
+        amount_hint = QLabel("Valor confirmado pelo servidor ao gerar o pagamento.")
         amount_hint.setWordWrap(True)
         amount_hint.setStyleSheet("color:#64748B;font-size:11px;")
         amount_text.addWidget(amount_title)
-        amount_text.addWidget(self.amount_value)
         amount_text.addWidget(amount_hint)
-        amount_layout.addLayout(amount_text)
+        amount_layout.addLayout(amount_text, 1)
+        amount_layout.addWidget(self.amount_value)
         layout.addWidget(amount_card)
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet(
+            "QTabWidget::pane{border:none;} QTabBar::tab{padding:7px 14px;color:#475569;}"
+            "QTabBar::tab:selected{background:white;color:#2563EB;font-weight:700;}"
+        )
+        layout.addWidget(self.tabs, 1)
 
         profile_card = QFrame()
         profile_card.setObjectName("billingProfileCard")
@@ -132,32 +137,46 @@ class BillingDialog(QDialog):
             "border-radius:12px;} QFrame#billingProfileCard QLabel{border:none;background:transparent;}"
         )
         profile_layout = QVBoxLayout(profile_card)
-        profile_layout.setContentsMargins(18, 16, 18, 16)
+        profile_layout.setContentsMargins(12, 10, 12, 10)
         profile_title = QLabel("Dados de cobrança e emissão do PIX")
         profile_title.setStyleSheet("font-size:16px;font-weight:800;border:none;")
         profile_layout.addWidget(profile_title)
-        form = QFormLayout()
-        form.setVerticalSpacing(10)
+        form = QGridLayout()
+        form.setVerticalSpacing(6)
+        form.setHorizontalSpacing(12)
+        form.setColumnStretch(0, 1)
+        form.setColumnStretch(1, 1)
         self.fields = {}
-        for key, label in self.FIELD_LABELS:
+        for index, (key, label) in enumerate(self.FIELD_LABELS):
+            cell = QWidget()
+            cell_layout = QHBoxLayout(cell)
+            cell_layout.setContentsMargins(0, 0, 0, 0)
+            cell_layout.setSpacing(6)
+            caption = QLabel(label)
+            caption.setStyleSheet("font-size:11px;")
+            caption.setWordWrap(True)
+            caption.setFixedWidth(140)
+            cell_layout.addWidget(caption)
             field = QLineEdit()
-            field.setMinimumHeight(40)
+            field.setMinimumHeight(32)
+            field.setAccessibleName(label)
             field.setStyleSheet(
                 "QLineEdit{background:white;border:1px solid #CBD5E1;border-radius:8px;"
-                "padding:8px;color:#0F172A;} QLineEdit:focus{border:2px solid #2563EB;}"
+                "padding:5px;color:#0F172A;} QLineEdit:focus{border:2px solid #2563EB;}"
             )
             if key == "state":
                 field.setMaxLength(2)
                 field.setPlaceholderText("UF")
             self.fields[key] = field
-            form.addRow(label, field)
+            cell_layout.addWidget(field, 1)
+            form.addWidget(cell, index // 2, index % 2)
         profile_layout.addLayout(form)
         self.save_button = QPushButton("Salvar dados de cobrança")
-        self.save_button.setMinimumHeight(44)
+        self.save_button.setMinimumHeight(34)
         self.save_button.setStyleSheet(self._button("#2563EB"))
         self.save_button.clicked.connect(self._save_profile)
         profile_layout.addWidget(self.save_button)
-        layout.addWidget(profile_card)
+        profile_layout.addStretch()
 
         payment_card = QFrame()
         payment_card.setObjectName("billingPaymentCard")
@@ -166,68 +185,77 @@ class BillingDialog(QDialog):
             "border-radius:12px;} QFrame#billingPaymentCard QLabel{border:none;background:transparent;}"
         )
         payment_layout = QVBoxLayout(payment_card)
-        payment_layout.setContentsMargins(18, 16, 18, 16)
-        payment_title = QLabel("Escolha a forma de pagamento")
+        payment_layout.setContentsMargins(12, 10, 12, 10)
+        payment_layout.setSpacing(6)
+        payment_title = QLabel("Pagamento por PIX")
         payment_title.setStyleSheet("font-size:16px;font-weight:800;border:none;")
         payment_layout.addWidget(payment_title)
-        note = QLabel("A validade é informada pelo provedor. Cada cobrança cobre as máquinas da emissão. "
-                      "Se alterar os computadores, gere uma cobrança atualizada e não pague o código anterior.")
+        note = QLabel("A validade é informada pelo provedor. Após alterar computadores, "
+                      "gere uma cobrança atualizada e não pague códigos antigos.")
         note.setWordWrap(True)
         note.setStyleSheet("color:#64748B;border:none;")
         payment_layout.addWidget(note)
+        payment_content = QHBoxLayout()
+        payment_layout.addLayout(payment_content, 1)
+        controls = QVBoxLayout()
+        controls.setSpacing(6)
+        payment_content.addLayout(controls, 1)
         buttons = QHBoxLayout()
         self.pix_button = QPushButton("Gerar PIX")
         for button, color in ((self.pix_button, "#059669"),):
-            button.setMinimumHeight(46)
+            button.setMinimumHeight(36)
             button.setStyleSheet(self._button(color))
             buttons.addWidget(button)
         self.pix_button.clicked.connect(lambda: self._create_payment("pix"))
-        payment_layout.addLayout(buttons)
+        controls.addLayout(buttons)
         self.result = QLabel("Nenhuma cobrança foi gerada nesta tela.")
         self.result.setWordWrap(True)
+        self.result.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.result.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.result.setStyleSheet(
             "background:#F8FAFC;border:1px dashed #CBD5E1;border-radius:8px;"
-            "padding:12px;color:#475569;"
+            "padding:8px;color:#475569;"
         )
-        payment_layout.addWidget(self.result)
+        controls.addWidget(self.result)
         self.qr_label = QLabel()
         self.qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.qr_label.setFixedSize(276, 276)
+        self.qr_label.setFixedSize(220, 220)
         self.qr_label.setStyleSheet(
             "background:white;border:1px solid #CBD5E1;border-radius:10px;padding:12px;"
         )
         self.qr_label.setVisible(False)
-        qr_row = QHBoxLayout()
-        qr_row.addStretch()
-        qr_row.addWidget(self.qr_label)
-        qr_row.addStretch()
-        payment_layout.addLayout(qr_row)
+        payment_content.addWidget(self.qr_label, 0, Qt.AlignmentFlag.AlignTop)
         result_actions = QHBoxLayout()
         self.copy_button = QPushButton("Copiar código")
         self.open_button = QPushButton("Abrir pagamento")
         for button in (self.copy_button, self.open_button):
-            button.setMinimumHeight(38)
+            button.setMinimumHeight(32)
             button.setStyleSheet(self._outline_button())
         self.copy_button.clicked.connect(self._copy_code)
         self.open_button.clicked.connect(self._open_payment)
         result_actions.addWidget(self.copy_button)
         result_actions.addWidget(self.open_button)
         result_actions.addStretch()
-        payment_layout.addLayout(result_actions)
+        controls.addLayout(result_actions)
         self.check_status_button = QPushButton("Consultar status no Mercado Pago")
         self.check_status_button.setStyleSheet(self._outline_button())
         self.check_status_button.clicked.connect(self._check_provider_status)
-        payment_layout.addWidget(self.check_status_button)
-        layout.addWidget(payment_card)
-        layout.addStretch()
-        scroll.setWidget(page)
-        root.addWidget(scroll)
+        controls.addWidget(self.check_status_button)
+        controls.addStretch()
+        for card, title in ((payment_card, "Pagamento PIX"), (profile_card, "Dados de cobrança")):
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            scroll.setWidget(card)
+            self.tabs.addTab(scroll, title)
+        self.tabs.setCurrentIndex(0)
+        root.addWidget(page, 1)
 
         footer = QFrame()
         footer.setStyleSheet("QFrame{background:#E8EEF7;border-top:1px solid #CBD5E1;}")
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(18, 12, 18, 12)
+        footer_layout.setContentsMargins(14, 8, 14, 8)
         footer_layout.addStretch()
         close_button = QPushButton("Fechar")
         close_button.setMinimumWidth(130)
@@ -241,14 +269,14 @@ class BillingDialog(QDialog):
     def _button(color):
         return (
             f"QPushButton{{background:{color};color:white;border:none;border-radius:8px;"
-            "padding:10px 16px;font-weight:700;} QPushButton:disabled{background:#CBD5E1;color:#64748B;}"
+            "padding:7px 12px;font-weight:700;} QPushButton:disabled{background:#CBD5E1;color:#64748B;}"
         )
 
     @staticmethod
     def _outline_button():
         return (
             "QPushButton{background:white;color:#334155;border:1px solid #CBD5E1;"
-            "border-radius:8px;padding:8px 14px;font-weight:700;}"
+            "border-radius:8px;padding:6px 10px;font-weight:700;}"
             "QPushButton:disabled{background:#F1F5F9;color:#94A3B8;}"
         )
 
@@ -319,7 +347,7 @@ class BillingDialog(QDialog):
             )
             self.environment_banner.setStyleSheet(
                 "background:#FFF7ED;border:2px solid #F97316;border-radius:10px;"
-                "padding:12px;color:#9A3412;font-size:13px;font-weight:900;"
+                "padding:7px;color:#9A3412;font-size:11px;font-weight:900;"
             )
         else:
             self.environment_banner.setText(
@@ -327,7 +355,7 @@ class BillingDialog(QDialog):
             )
             self.environment_banner.setStyleSheet(
                 "background:#ECFDF5;border:2px solid #10B981;border-radius:10px;"
-                "padding:12px;color:#065F46;font-size:13px;font-weight:900;"
+                "padding:7px;color:#065F46;font-size:11px;font-weight:900;"
             )
         invoices = list(response.get("invoices") or [])
         attempts = list(invoices[0].get("billing_payment_attempts") or []) if invoices else []
@@ -564,7 +592,7 @@ class BillingDialog(QDialog):
         qr.add_data(code)
         qr.make(fit=True)
         image = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-        image = image.resize((250, 250), Image.Resampling.NEAREST)
+        image = image.resize((194, 194), Image.Resampling.NEAREST)
         buffer = BytesIO()
         image.save(buffer, format="PNG")
         pixmap = QPixmap()
