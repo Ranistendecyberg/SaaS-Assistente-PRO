@@ -4,7 +4,7 @@ import datetime
 import re
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QPageSize, QPageLayout
-from PyQt6.QtCore import QMarginsF, QEventLoop
+from PyQt6.QtCore import QMarginsF, QEventLoop, QTimer
 
 class PDFReportGenerator:
     """
@@ -19,6 +19,7 @@ class PDFReportGenerator:
         """
         Renderiza HTML em PDF A4 de alta definição com margens calibradas em 8mm.
         """
+        page = None
         try:
             from PyQt6.QtWebEngineCore import QWebEnginePage
             
@@ -30,12 +31,21 @@ class PDFReportGenerator:
                 app = QApplication(sys.argv)
 
             page = QWebEnginePage()
-            page.setHtml(html_content)
-
-            # Aguarda o carregamento do DOM
             load_loop = QEventLoop()
-            page.loadFinished.connect(lambda ok: load_loop.quit())
+            loaded = [False]
+            def on_loaded(ok):
+                loaded[0] = ok
+                load_loop.quit()
+            page.loadFinished.connect(on_loaded)
+            load_timer = QTimer()
+            load_timer.setSingleShot(True)
+            load_timer.timeout.connect(load_loop.quit)
+            load_timer.start(30000)
+            page.setHtml(html_content)
             load_loop.exec()
+            load_timer.stop()
+            if not loaded[0]:
+                return False
 
             # Configura layout de página A4 com margens otimizadas de 8mm
             layout = QPageLayout(
@@ -54,14 +64,22 @@ class PDFReportGenerator:
                 pdf_loop.quit()
 
             page.pdfPrintingFinished.connect(on_pdf_finished)
+            pdf_timer = QTimer()
+            pdf_timer.setSingleShot(True)
+            pdf_timer.timeout.connect(pdf_loop.quit)
+            pdf_timer.start(30000)
             page.printToPdf(output_path, layout)
             pdf_loop.exec()
+            pdf_timer.stop()
 
             return sucesso_flag[0] and os.path.exists(output_path) and os.path.getsize(output_path) > 0
 
         except Exception as e:
             print(f"[PDF_GEN] Erro ao renderizar PDF via WebEngine: {e}")
             return False
+        finally:
+            if page is not None:
+                page.deleteLater()
 
     @classmethod
     def generate_comparativo_pdf(cls, output_pdf_path: str, html_content: str) -> bool:

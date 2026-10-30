@@ -11,6 +11,7 @@ class DashboardTabsScreen(QWidget):
         self.dashboard_tsi = None
         self.dashboard_ssi = None
         self.dashboard_comparativo = None
+        self._loading_tabs = set()
         self.setup_ui()
         
     def setup_ui(self):
@@ -71,9 +72,11 @@ class DashboardTabsScreen(QWidget):
         
     def showEvent(self, event):
         super().showEvent(event)
-        # Ao abrir essa tela pela primeira vez, carrega a aba ativa (TSI)
-        if self.dashboard_tsi is None:
-            self.on_tab_changed(self.tabs.currentIndex())
+        # Carrega apenas a aba ativa que ainda não possui painel.
+        index = self.tabs.currentIndex()
+        attributes = ("dashboard_tsi", "dashboard_ssi", "dashboard_comparativo")
+        if 0 <= index < len(attributes) and getattr(self, attributes[index]) is None:
+            self.on_tab_changed(index)
         
     def on_tab_changed(self, index):
         tabs = {
@@ -86,12 +89,16 @@ class DashboardTabsScreen(QWidget):
             return
 
         attribute, layout, screen_class = tab
+        if index in self._loading_tabs:
+            return
+        self._loading_tabs.add(index)
         try:
             screen = getattr(self, attribute)
             if screen is None:
                 screen = screen_class()
-                layout.addWidget(screen)
+                self._clear_layout(layout)
                 setattr(self, attribute, screen)
+                layout.addWidget(screen)
             else:
                 screen.carregar_dados()
         except Exception as error:
@@ -99,6 +106,9 @@ class DashboardTabsScreen(QWidget):
                 type(self).__name__, f"criar_aba_{index}", error,
             )
             self._show_tab_error(layout, index, diagnostic_id)
+            setattr(self, attribute, None)
+        finally:
+            self._loading_tabs.discard(index)
 
     @staticmethod
     def _clear_layout(layout):

@@ -10,6 +10,7 @@ def build_engine():
             {"cpf": "00000000012345678901", "nome": "ANA VENDEDORA"}
         ]
     }
+    engine._rebuild_indexes()
     return engine
 
 

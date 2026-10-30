@@ -88,9 +88,9 @@ class PixDisplayTests(unittest.TestCase):
             "status": "vencida", "dias_restantes": 0, "valor_mensalidade": 250,
         }
         self.screen.buscar_status_silencioso()
-        self.assertEqual(self.screen.btn_pix.text(), "Consultar valor e gerar PIX")
+        self.assertEqual(self.screen.btn_pix.text(), "Acessar Conta Empresarial para pagar por PIX")
         self.screen.verificar_status_inicial()
-        self.assertEqual(self.screen.btn_pix.text(), "Consultar valor e gerar PIX")
+        self.assertEqual(self.screen.btn_pix.text(), "Acessar Conta Empresarial para pagar por PIX")
 
     def test_brazilian_currency_two_decimals(self):
         self.assertEqual(_pix_currency(_confirmed_pix_amount("1300.5")), "R$ 1.300,50")

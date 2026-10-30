@@ -6,6 +6,7 @@ from datetime import datetime
 from functools import wraps
 import os
 import traceback
+import inspect
 
 
 def record_dashboard_error(screen, action, error):
@@ -36,10 +37,20 @@ def protect_dashboard_action(action):
     """Evita que excecoes de dados/relatorios cheguem ao sys.excepthook global."""
 
     def decorate(function):
+        parameters = tuple(inspect.signature(function).parameters.values())
+        accepts_signal_args = any(p.kind == p.VAR_POSITIONAL for p in parameters)
+        positional_count = sum(
+            p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+            for p in parameters
+        ) - 1
+
         @wraps(function)
         def guarded(self, *args, **kwargs):
             try:
-                return function(self, *args, **kwargs)
+                # Slots Python aceitam sinais com argumentos extras. O wrapper
+                # variádico precisa manter esse comportamento do Qt.
+                slot_args = args if accepts_signal_args else args[:positional_count]
+                return function(self, *slot_args, **kwargs)
             except Exception as error:
                 diagnostic_id = record_dashboard_error(
                     type(self).__name__, action, error,

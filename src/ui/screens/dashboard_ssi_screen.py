@@ -1044,8 +1044,6 @@ class DashboardSSIScreen(QWidget):
         </body>
         </html>
         """
-        with open("test_ssi.html", "w", encoding="utf-8") as f:
-            f.write(html)
         self.web_view.setHtml(html)
 
     @protect_dashboard_action("exportar_pdf_executivo")
